@@ -26,12 +26,11 @@ fn print_controls() {
     println!("================");
 }
 
-
 fn main() -> Result<(), Box<dyn Error>> {
     print_controls();
 
-    let width = 1920;
-    let height = 1080;
+    let width = 1280;
+    let height = 720;
     let mut window = Window::new(width, height, "Solar System")?;
     let vertex_src = read_to_string("poslight.vert")?;
     let fragment_src = read_to_string("poslight.frag")?;
@@ -41,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut camera = Camera::new(Vec3::new(0.0, 2.0, 5.0));
     camera.look_at(Vec3::ZERO);
 
-    let projection = Mat4::perspective_rh(
+    let mut projection = Mat4::perspective_rh(
         std::f32::consts::PI / 4.0,
         width as f32 / height as f32,
         0.1,
@@ -55,7 +54,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let light_pos_loc = unsafe { gl::GetUniformLocation(shader_program, b"light_pos\0".as_ptr() as *const _) };
     let emit_mode_loc = unsafe { gl::GetUniformLocation(shader_program, b"emit_mode\0".as_ptr() as *const _) };
 
-    
     let sun = Sphere::new(128, 128, Vec4::new(1.0, 0.8, 0.0, 1.0));
     let earth = Sphere::new(128, 128, Vec4::new(0.0, 0.3, 1.0, 1.0));
     let moon = Sphere::new(128, 128, Vec4::new(0.5, 0.5, 0.5, 1.0));
@@ -92,7 +90,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         window.poll_events();
         input_handler.handle_events(&mut window, &mut camera);
 
-        
+        if let Some((width, height)) = input_handler.framebuffer_size.take() {
+            unsafe { gl::Viewport(0, 0, width, height); }
+            projection = Mat4::perspective_rh(
+                std::f32::consts::PI / 4.0,
+                width as f32 / height as f32,
+                0.1,
+                100.0,
+            );
+        }
+
         if input_handler.keys_pressed.contains(&glfw::Key::Equal) { sim_time_scale *= 1.2; }
         if input_handler.keys_pressed.contains(&glfw::Key::Minus) { sim_time_scale /= 1.2; }
         sim_time_scale = sim_time_scale.clamp(0.01, 10.0);
@@ -103,7 +110,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         earth_spin += 2.0 * dt;
         moon_orbit += 1.5 * dt;
         moon_spin += 1.5 * dt;
-        
+
         let mut rot = Quat::IDENTITY;
         if input_handler.keys_pressed.contains(&glfw::Key::Left)  { rot = Quat::from_rotation_y(SPACECRAFT_ROT_SPEED*dt) * rot; }
         if input_handler.keys_pressed.contains(&glfw::Key::Right) { rot = Quat::from_rotation_y(-SPACECRAFT_ROT_SPEED*dt) * rot; }
@@ -112,7 +119,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         spacecraft_rot = (rot * spacecraft_rot).normalize();
         if input_handler.keys_pressed.contains(&glfw::Key::PageDown)   { spacecraft_dist = (spacecraft_dist - 0.1*dt).max(0.05); }
         if input_handler.keys_pressed.contains(&glfw::Key::PageUp) { spacecraft_dist += 0.1*dt; }
-        
+
         if input_handler.keys_pressed.contains(&glfw::Key::Num1) { camera.position = Vec3::new(0.0, 2.0, 5.0); camera.look_at(Vec3::ZERO); }
         if input_handler.keys_pressed.contains(&glfw::Key::Num2) {
             let earth_pos = Vec3::new(EARTH_ORBIT_RADIUS*earth_orbit.cos(),0.0,EARTH_ORBIT_RADIUS*earth_orbit.sin());
@@ -135,7 +142,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         if input_handler.keys_pressed.contains(&glfw::Key::LeftShift) { vel -= camera.up; }
         if vel.length_squared() > 0.0 { camera.position += vel.normalize() * MOVE_SPEED * delta; }
 
-        
         let view = camera.view_matrix();
         unsafe {
             gl::ClearColor(0.0,0.0,0.0,1.0);
@@ -148,7 +154,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let light_view = view * light_world;
             gl::Uniform4f(light_pos_loc,light_view.x,light_view.y,light_view.z,1.0);
         }
-        
+
         let mut ts = TransformStack::new();
 
         unsafe { gl::Uniform1ui(emit_mode_loc,1); }
@@ -173,7 +179,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         earth.draw(earth_model);
 
-        
         let moon_pos = Vec3::new(MOON_ORBIT_RADIUS*moon_orbit.cos(),0.0,MOON_ORBIT_RADIUS*moon_orbit.sin());
         ts.push(Mat4::from_translation(moon_pos));
         let moon_model = ts.current() * Mat4::from_rotation_y(moon_spin) * Mat4::from_scale(Vec3::splat(MOON_RADIUS));
@@ -184,7 +189,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             gl::UniformMatrix3fv(normal_matrix_loc,1,gl::FALSE,moon_normal.to_cols_array().as_ptr());
         }
         moon.draw(moon_model);
-        
+
         ts.push(Mat4::from_quat(spacecraft_rot));
         ts.push(Mat4::from_translation(Vec3::new(0.0,0.0,spacecraft_dist)));
         let spacecraft_model = ts.current() * Mat4::from_scale(Vec3::new(SPACECRAFT_SIZE*0.6,SPACECRAFT_SIZE*0.5,SPACECRAFT_SIZE*1.8));

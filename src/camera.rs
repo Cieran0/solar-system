@@ -1,4 +1,3 @@
-
 use glam::{Mat4, Vec3};
 
 const PITCH_MIN: f32 = -std::f32::consts::FRAC_PI_2 + 0.01;
@@ -21,7 +20,6 @@ impl Camera {
         }
     }
 
-    
     pub fn forward(&self) -> Vec3 {
         Vec3::new(
             self.yaw.sin() * self.pitch.cos(),
@@ -40,7 +38,6 @@ impl Camera {
         self.pitch = self.pitch.clamp(PITCH_MIN, PITCH_MAX);
     }
 
-    
     pub fn look_at(&mut self, target: Vec3) {
         let direction = (target - self.position).normalize();
         self.yaw = direction.x.atan2(direction.z);
