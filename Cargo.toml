@@ -1,0 +1,10 @@
+[package]
+name = "solar-system"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+glfw = "0.60.0"
+gl = "0.14"
+glam = "0.30.8"
+rand = "0.9"
