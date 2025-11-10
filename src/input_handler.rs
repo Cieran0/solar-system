@@ -6,6 +6,7 @@ use glfw::{Action, Key, WindowEvent};
 
 const MOUSE_SENSITIVITY: f32 = 0.001;
 
+// Hold data for keyboard, mouse and resize events
 pub struct InputHandler {
     pub keys_pressed: HashSet<Key>,
     pub mouse_pressed: bool,
@@ -14,6 +15,7 @@ pub struct InputHandler {
 }
 
 impl InputHandler {
+    // Setup InputHandler
     pub fn new() -> Self {
         Self {
             keys_pressed: HashSet::new(),
@@ -23,6 +25,7 @@ impl InputHandler {
         }
     }
 
+    // Handle keyboard, mouse and resize events
     pub fn handle_events(
         &mut self,
         gl_window: &mut Window,
@@ -30,6 +33,9 @@ impl InputHandler {
     ) {
         let events: Vec<_> = glfw::flush_messages(&gl_window.events).collect();
 
+        // Store keypresses, close on Escape
+        // Handle moving mouse
+        // Stores new framebuffer size when resized
         for (_, event) in events {
             match event {
                 WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
@@ -41,6 +47,7 @@ impl InputHandler {
                 WindowEvent::Key(key, _, Action::Release, _) => {
                     self.keys_pressed.remove(&key);
                 }
+                // Only update if cursor moves
                 WindowEvent::CursorPos(xpos, ypos) => {
                     if self.mouse_pressed {
                         if let Some((last_x, last_y)) = self.last_mouse_pos {
@@ -53,6 +60,8 @@ impl InputHandler {
                     }
                     self.last_mouse_pos = Some((xpos, ypos));
                 }
+
+                // Only store if mouse is pressed
                 WindowEvent::MouseButton(glfw::MouseButton::Left, action, _) => {
                     self.mouse_pressed = action == Action::Press;
                     if self.mouse_pressed {
@@ -60,6 +69,8 @@ impl InputHandler {
                         self.last_mouse_pos = Some((x, y));
                     }
                 }
+
+                // Only store if framebuffer is resized
                 WindowEvent::FramebufferSize(width, height) => {
                     self.framebuffer_size = Some((width, height));
                 }
