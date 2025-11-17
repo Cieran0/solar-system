@@ -4,8 +4,8 @@ mod shaders;
 mod transform_stack;
 mod input_handler;
 mod shape;
-
-use std::{error::Error, fs::read_to_string, time::Instant};
+mod obj;
+use std::{error::Error, fs::{self, read_to_string}, time::Instant};
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use crate::{
     camera::Camera,
@@ -14,7 +14,33 @@ use crate::{
     shape::{Sphere, Shape, Cube},
     transform_stack::TransformStack,
     window::Window,
+    obj::ObjModel,
 };
+
+fn load_raw_rgba_texture(path: &str, width: u32, height: u32) -> Result<u32, Box<dyn std::error::Error>> {
+    let data = fs::read(path)?;
+    assert_eq!(data.len(), (width * height * 4) as usize);
+    let mut texture_id = 0;
+    unsafe {
+        gl::GenTextures(1, &mut texture_id);
+        gl::BindTexture(gl::TEXTURE_2D, texture_id);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+        gl::TexImage2D(
+            gl::TEXTURE_2D,
+            0,
+            gl::RGBA8 as i32,
+            width as i32,
+            height as i32,
+            0,
+            gl::RGBA,
+            gl::UNSIGNED_BYTE,
+            data.as_ptr() as *const _,
+        );
+        gl::BindTexture(gl::TEXTURE_2D, 0);
+    }
+    Ok(texture_id)
+}
 
 fn print_controls() {
     println!("=== Controls ===");
@@ -28,8 +54,6 @@ fn print_controls() {
 
 fn main() -> Result<(), Box<dyn Error>> {
     print_controls();
-
-    // Initalise Window and compile shaders
     let width = 1280;
     let height = 720;
     let mut window = Window::new(width, height, "Solar System")?;
@@ -38,10 +62,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shader_program = create_shader_program(&vertex_src, &fragment_src)?;
     set_current_program(shader_program);
 
-    // Initalise Camera and Projection 
+    let model_loc = unsafe { gl::GetUniformLocation(shader_program, b"model\0".as_ptr() as *const _) };
+    let view_loc = unsafe { gl::GetUniformLocation(shader_program, b"view\0".as_ptr() as *const _) };
+    let proj_loc = unsafe { gl::GetUniformLocation(shader_program, b"projection\0".as_ptr() as *const _) };
+    let normal_matrix_loc = unsafe { gl::GetUniformLocation(shader_program, b"normal_matrix\0".as_ptr() as *const _) };
+    let light_pos_loc = unsafe { gl::GetUniformLocation(shader_program, b"light_pos\0".as_ptr() as *const _) };
+    let emit_mode_loc = unsafe { gl::GetUniformLocation(shader_program, b"emit_mode\0".as_ptr() as *const _) };
+    let use_texture_loc = unsafe { gl::GetUniformLocation(shader_program, b"use_texture\0".as_ptr() as *const _) };
+    let base_texture_loc = unsafe { gl::GetUniformLocation(shader_program, b"base_texture\0".as_ptr() as *const _) };
+
+    // LOAD SUN AND MOON TEXTURES
+    let earth_texture = load_raw_rgba_texture("textures/earth.rgba", 4096, 2048)?;
+    let sun_texture = load_raw_rgba_texture("textures/sun.rgba", 4096, 2048)?;
+    let moon_texture = load_raw_rgba_texture("textures/moon.rgba", 2048, 1024)?;
+
     let mut camera = Camera::new(Vec3::new(0.0, 2.0, 5.0));
     camera.look_at(Vec3::ZERO);
-
     let mut projection = Mat4::perspective_rh(
         std::f32::consts::PI / 4.0,
         width as f32 / height as f32,
@@ -49,21 +85,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         100.0,
     );
 
-    // Locate uniforms in shaders
-    let model_loc = unsafe { gl::GetUniformLocation(shader_program, b"model\0".as_ptr() as *const _) };
-    let view_loc = unsafe { gl::GetUniformLocation(shader_program, b"view\0".as_ptr() as *const _) };
-    let proj_loc = unsafe { gl::GetUniformLocation(shader_program, b"projection\0".as_ptr() as *const _) };
-    let normal_matrix_loc = unsafe { gl::GetUniformLocation(shader_program, b"normal_matrix\0".as_ptr() as *const _) };
-    let light_pos_loc = unsafe { gl::GetUniformLocation(shader_program, b"light_pos\0".as_ptr() as *const _) };
-    let emit_mode_loc = unsafe { gl::GetUniformLocation(shader_program, b"emit_mode\0".as_ptr() as *const _) };
-
-    // Generate meshes for objects (Basic Shapes)
+    // Use Sphere for Sun and Moon (now textured)
     let sun = Sphere::new(128, 128, Vec4::new(1.0, 0.8, 0.0, 1.0));
-    let earth = Sphere::new(128, 128, Vec4::new(0.0, 0.3, 1.0, 1.0));
+    let earth = ObjModel::new("models/earth.obj")?;
     let moon = Sphere::new(128, 128, Vec4::new(0.5, 0.5, 0.5, 1.0));
     let spacecraft = Cube::new();
 
-    // Constants for object location and rotation speed
     const SUN_RADIUS: f32 = 1.0;
     const EARTH_RADIUS: f32 = 0.2;
     const MOON_RADIUS: f32 = 0.06;
@@ -73,7 +100,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     const SPACECRAFT_SIZE: f32 = 0.03;
     const SPACECRAFT_ROT_SPEED: f32 = 1.5;
 
-    // Variables to hold current rotation/spin for objects 
     let mut sun_spin = 0.0;
     let mut earth_orbit = 0.0;
     let mut earth_spin = 0.0;
@@ -83,24 +109,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut spacecraft_dist: f32 = 0.3;
     let mut sim_time_scale: f32 = 1.0;
 
-    // Initalise the input handler for keyboard and resize events
     let mut input_handler = InputHandler::new();
     unsafe { gl::Viewport(0, 0, width as i32, height as i32); }
-    
-    // Timer for delta time (simulation framerate independent)
     let mut last_time = Instant::now();
 
-    // Draw Loop
     while !window.should_close() {
         let now = Instant::now();
         let delta = (now - last_time).as_secs_f32();
         last_time = now;
-
-        // Get and handle events
         window.poll_events();
         input_handler.handle_events(&mut window, &mut camera);
 
-        // Handle resize when framebuffer (window) is resized
         if let Some((width, height)) = input_handler.framebuffer_size.take() {
             unsafe { gl::Viewport(0, 0, width, height); }
             projection = Mat4::perspective_rh(
@@ -111,44 +130,42 @@ fn main() -> Result<(), Box<dyn Error>> {
             );
         }
 
-        // Speedup / Slowdown simulation
         if input_handler.keys_pressed.contains(&glfw::Key::Equal) { sim_time_scale *= 1.2; }
         if input_handler.keys_pressed.contains(&glfw::Key::Minus) { sim_time_scale /= 1.2; }
         sim_time_scale = sim_time_scale.clamp(0.01, 10.0);
         let dt = delta * sim_time_scale;
 
-        // Spin the objects (no texture so hard to tell they are spinning)
         sun_spin += 0.1 * dt;
         earth_orbit += 0.5 * dt;
         earth_spin += 2.0 * dt;
         moon_orbit += 1.5 * dt;
         moon_spin += 1.5 * dt;
 
-        // Rotate spacecraft around the moon (is a little bit scuffed but shows off idea)
         let mut rot = Quat::IDENTITY;
-        if input_handler.keys_pressed.contains(&glfw::Key::Left)  { rot = Quat::from_rotation_y(SPACECRAFT_ROT_SPEED*dt) * rot; }
-        if input_handler.keys_pressed.contains(&glfw::Key::Right) { rot = Quat::from_rotation_y(-SPACECRAFT_ROT_SPEED*dt) * rot; }
-        if input_handler.keys_pressed.contains(&glfw::Key::Up)    { rot = rot * Quat::from_rotation_x(SPACECRAFT_ROT_SPEED*dt); }
-        if input_handler.keys_pressed.contains(&glfw::Key::Down)  { rot = rot * Quat::from_rotation_x(-SPACECRAFT_ROT_SPEED*dt); }
+        if input_handler.keys_pressed.contains(&glfw::Key::Left)  { rot = Quat::from_rotation_y(SPACECRAFT_ROT_SPEED * dt) * rot; }
+        if input_handler.keys_pressed.contains(&glfw::Key::Right) { rot = Quat::from_rotation_y(-SPACECRAFT_ROT_SPEED * dt) * rot; }
+        if input_handler.keys_pressed.contains(&glfw::Key::Up)    { rot = rot * Quat::from_rotation_x(SPACECRAFT_ROT_SPEED * dt); }
+        if input_handler.keys_pressed.contains(&glfw::Key::Down)  { rot = rot * Quat::from_rotation_x(-SPACECRAFT_ROT_SPEED * dt); }
         spacecraft_rot = (rot * spacecraft_rot).normalize();
+        if input_handler.keys_pressed.contains(&glfw::Key::PageDown) { spacecraft_dist = (spacecraft_dist - 0.1 * dt).max(0.05); }
+        if input_handler.keys_pressed.contains(&glfw::Key::PageUp)   { spacecraft_dist += 0.1 * dt; }
 
-        // Move the spaceship closer and further from moon
-        if input_handler.keys_pressed.contains(&glfw::Key::PageDown)   { spacecraft_dist = (spacecraft_dist - 0.1*dt).max(0.05); }
-        if input_handler.keys_pressed.contains(&glfw::Key::PageUp) { spacecraft_dist += 0.1*dt; }
-
-        // Zoom over to the different bodies (doesn't lock for now maybe should?)
-        if input_handler.keys_pressed.contains(&glfw::Key::Num1) { camera.position = Vec3::new(0.0, 2.0, 5.0); camera.look_at(Vec3::ZERO); }
+        if input_handler.keys_pressed.contains(&glfw::Key::Num1) {
+            camera.position = Vec3::new(0.0, 2.0, 5.0);
+            camera.look_at(Vec3::ZERO);
+        }
         if input_handler.keys_pressed.contains(&glfw::Key::Num2) {
-            let earth_pos = Vec3::new(EARTH_ORBIT_RADIUS*earth_orbit.cos(),0.0,EARTH_ORBIT_RADIUS*earth_orbit.sin());
-            camera.position = earth_pos + Vec3::new(0.0,0.5,1.0); camera.look_at(earth_pos);
+            let earth_pos = Vec3::new(EARTH_ORBIT_RADIUS * earth_orbit.cos(), 0.0, EARTH_ORBIT_RADIUS * earth_orbit.sin());
+            camera.position = earth_pos + Vec3::new(0.0, 0.5, 1.0);
+            camera.look_at(earth_pos);
         }
         if input_handler.keys_pressed.contains(&glfw::Key::Num3) {
-            let earth_pos = Vec3::new(EARTH_ORBIT_RADIUS*earth_orbit.cos(),0.0,EARTH_ORBIT_RADIUS*earth_orbit.sin());
-            let moon_pos = earth_pos + Vec3::new(MOON_ORBIT_RADIUS*moon_orbit.cos(),0.0,MOON_ORBIT_RADIUS*moon_orbit.sin());
-            camera.position = moon_pos + Vec3::new(0.0,0.3,0.6); camera.look_at(moon_pos);
+            let earth_pos = Vec3::new(EARTH_ORBIT_RADIUS * earth_orbit.cos(), 0.0, EARTH_ORBIT_RADIUS * earth_orbit.sin());
+            let moon_pos = earth_pos + Vec3::new(MOON_ORBIT_RADIUS * moon_orbit.cos(), 0.0, MOON_ORBIT_RADIUS * moon_orbit.sin());
+            camera.position = moon_pos + Vec3::new(0.0, 0.3, 0.6);
+            camera.look_at(moon_pos);
         }
 
-        // Move camera with WASD relative to where camera is looking
         let fwd = camera.forward();
         let right = fwd.cross(camera.up).normalize();
         let mut vel = Vec3::ZERO;
@@ -158,97 +175,106 @@ fn main() -> Result<(), Box<dyn Error>> {
         if input_handler.keys_pressed.contains(&glfw::Key::D) { vel += right; }
         if input_handler.keys_pressed.contains(&glfw::Key::Space)     { vel += camera.up; }
         if input_handler.keys_pressed.contains(&glfw::Key::LeftShift) { vel -= camera.up; }
-        if vel.length_squared() > 0.0 { camera.position += vel.normalize() * MOVE_SPEED * delta; }
+        if vel.length_squared() > 0.0 {
+            camera.position += vel.normalize() * MOVE_SPEED * delta;
+        }
 
         let view = camera.view_matrix();
         unsafe {
-            // Clear the framebuffer
-            gl::ClearColor(0.0,0.0,0.0,1.0);
+            gl::ClearColor(0.0, 0.0, 0.0, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
-            // Use the shader program
             gl::UseProgram(shader_program);
             set_current_program(shader_program);
-
-            // Set up uniforms for shaders
-            gl::UniformMatrix4fv(view_loc,1,gl::FALSE,view.to_cols_array().as_ptr());
-            gl::UniformMatrix4fv(proj_loc,1,gl::FALSE,projection.to_cols_array().as_ptr());
-            let light_world = Vec4::new(0.0,0.0,0.0,1.0);
+            gl::UniformMatrix4fv(view_loc, 1, gl::FALSE, view.to_cols_array().as_ptr());
+            gl::UniformMatrix4fv(proj_loc, 1, gl::FALSE, projection.to_cols_array().as_ptr());
+            let light_world = Vec4::new(0.0, 0.0, 0.0, 1.0);
             let light_view = view * light_world;
-            gl::Uniform4f(light_pos_loc,light_view.x,light_view.y,light_view.z,1.0);
+            gl::Uniform4f(light_pos_loc, light_view.x, light_view.y, light_view.z, 1.0);
         }
 
-        // Create the transform stack for objects
         let mut ts = TransformStack::new();
 
-        // Draw the sun with emit mode turned on
-        unsafe { gl::Uniform1ui(emit_mode_loc,1); }
+        // === SUN ===
+        unsafe {
+            gl::Uniform1ui(emit_mode_loc, 1);
+            gl::Uniform1i(use_texture_loc, 1);  // ← ENABLE TEXTURE
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, sun_texture);  // ← BIND SUN
+            gl::Uniform1i(base_texture_loc, 0);
+        }
         let sun_model = ts.current() * Mat4::from_rotation_y(sun_spin) * Mat4::from_scale(Vec3::splat(SUN_RADIUS));
         let sun_mv = view * sun_model;
         let sun_normal = Mat3::from_mat4(sun_mv).inverse().transpose();
         unsafe {
-            gl::UniformMatrix4fv(model_loc,1,gl::FALSE,sun_model.to_cols_array().as_ptr());
-            gl::UniformMatrix3fv(normal_matrix_loc,1,gl::FALSE,sun_normal.to_cols_array().as_ptr());
+            gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, sun_model.to_cols_array().as_ptr());
+            gl::UniformMatrix3fv(normal_matrix_loc, 1, gl::FALSE, sun_normal.to_cols_array().as_ptr());
         }
         sun.draw(sun_model);
 
-        // Draw the earth with emit mode turned off (stays off for the rest of the objects)
-        unsafe { gl::Uniform1ui(emit_mode_loc,0); }
-        let earth_pos = Vec3::new(EARTH_ORBIT_RADIUS*earth_orbit.cos(),0.0,EARTH_ORBIT_RADIUS*earth_orbit.sin());
-        // Push only the earth position for the moon (independent from the spin)
+        // === EARTH ===
+        unsafe {
+            gl::Uniform1ui(emit_mode_loc, 0);
+            gl::Uniform1i(use_texture_loc, 1);
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, earth_texture);
+            gl::Uniform1i(base_texture_loc, 0);
+        }
+        let earth_pos = Vec3::new(EARTH_ORBIT_RADIUS * earth_orbit.cos(), 0.0, EARTH_ORBIT_RADIUS * earth_orbit.sin());
         ts.push(Mat4::from_translation(earth_pos));
         let earth_model = ts.current() * Mat4::from_rotation_y(earth_spin) * Mat4::from_scale(Vec3::splat(EARTH_RADIUS));
         let earth_mv = view * earth_model;
         let earth_normal = Mat3::from_mat4(earth_mv).inverse().transpose();
         unsafe {
-            gl::UniformMatrix4fv(model_loc,1,gl::FALSE,earth_model.to_cols_array().as_ptr());
-            gl::UniformMatrix3fv(normal_matrix_loc,1,gl::FALSE,earth_normal.to_cols_array().as_ptr());
+            gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, earth_model.to_cols_array().as_ptr());
+            gl::UniformMatrix3fv(normal_matrix_loc, 1, gl::FALSE, earth_normal.to_cols_array().as_ptr());
         }
         earth.draw(earth_model);
 
-        // Draw the moon relative to the earth
-        let moon_pos = Vec3::new(MOON_ORBIT_RADIUS*moon_orbit.cos(),0.0,MOON_ORBIT_RADIUS*moon_orbit.sin());
-        // Push only the moon position for the spacecraft (independent from the spin)
+        // === MOON ===
+        unsafe {
+            gl::Uniform1ui(emit_mode_loc, 0);
+            gl::Uniform1i(use_texture_loc, 1);  // ← ENABLE TEXTURE
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::BindTexture(gl::TEXTURE_2D, moon_texture);  // ← BIND MOON
+            gl::Uniform1i(base_texture_loc, 0);
+        }
+        let moon_pos = Vec3::new(MOON_ORBIT_RADIUS * moon_orbit.cos(), 0.0, MOON_ORBIT_RADIUS * moon_orbit.sin());
         ts.push(Mat4::from_translation(moon_pos));
         let moon_model = ts.current() * Mat4::from_rotation_y(moon_spin) * Mat4::from_scale(Vec3::splat(MOON_RADIUS));
         let moon_mv = view * moon_model;
         let moon_normal = Mat3::from_mat4(moon_mv).inverse().transpose();
         unsafe {
-            gl::UniformMatrix4fv(model_loc,1,gl::FALSE,moon_model.to_cols_array().as_ptr());
-            gl::UniformMatrix3fv(normal_matrix_loc,1,gl::FALSE,moon_normal.to_cols_array().as_ptr());
+            gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, moon_model.to_cols_array().as_ptr());
+            gl::UniformMatrix3fv(normal_matrix_loc, 1, gl::FALSE, moon_normal.to_cols_array().as_ptr());
         }
         moon.draw(moon_model);
 
-        // Draw spacecraft relative to the moon
+        // === SPACECRAFT ===
         ts.push(Mat4::from_quat(spacecraft_rot));
-        ts.push(Mat4::from_translation(Vec3::new(0.0,0.0,spacecraft_dist)));
-        let spacecraft_model = ts.current() * Mat4::from_scale(Vec3::new(SPACECRAFT_SIZE*0.6,SPACECRAFT_SIZE*0.5,SPACECRAFT_SIZE*1.8));
+        ts.push(Mat4::from_translation(Vec3::new(0.0, 0.0, spacecraft_dist)));
+        let spacecraft_model = ts.current() * Mat4::from_scale(Vec3::new(SPACECRAFT_SIZE * 0.6, SPACECRAFT_SIZE * 0.5, SPACECRAFT_SIZE * 1.8));
         let spacecraft_mv = view * spacecraft_model;
         let spacecraft_normal = Mat3::from_mat4(spacecraft_mv).inverse().transpose();
         unsafe {
-            gl::UniformMatrix4fv(model_loc,1,gl::FALSE,spacecraft_model.to_cols_array().as_ptr());
-            gl::UniformMatrix3fv(normal_matrix_loc,1,gl::FALSE,spacecraft_normal.to_cols_array().as_ptr());
+            gl::Uniform1i(use_texture_loc, 0);
+            gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, spacecraft_model.to_cols_array().as_ptr());
+            gl::UniformMatrix3fv(normal_matrix_loc, 1, gl::FALSE, spacecraft_normal.to_cols_array().as_ptr());
         }
         spacecraft.draw(spacecraft_model);
-        
-        // Pop spacecraft
-        ts.pop(); 
-        ts.pop(); 
 
-        // Pop moon
-        ts.pop(); 
-
-        // Pop earth
+        ts.pop();
+        ts.pop();
+        ts.pop();
         ts.pop();
 
-        // We don't pop for sun as we dont store it as it is always at 0,0,0 for now.
-        // Could expand to move the sun in the scene (mimic real life as it orbits Sagittarius A* [black hole at centre of milkway])
-
-        // Swap buffers to draw new frame
         window.swap_buffers();
     }
 
-    // Delete shader
-    unsafe { gl::DeleteProgram(shader_program); }
+    unsafe {
+        gl::DeleteProgram(shader_program);
+        gl::DeleteTextures(1, &earth_texture);
+        gl::DeleteTextures(1, &sun_texture);
+        gl::DeleteTextures(1, &moon_texture);
+    }
     Ok(())
 }

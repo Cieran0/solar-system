@@ -3,18 +3,17 @@
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec4 colour;
 layout(location = 2) in vec3 normal;
+layout(location = 3) in vec2 tex_coord;
 
 out vec4 f_base_colour;
 out vec3 f_position;
 out vec3 f_light_direction;
 out vec3 f_normal;
+out vec2 f_tex_coord;
 
 uniform mat4 model, view, projection;
 uniform mat3 normal_matrix;
 uniform vec4 light_pos;
-
-vec3 global_ambient = vec3(0.2, 0.2, 0.2);
-int shininess = 8;
 
 void main()
 {
@@ -28,10 +27,10 @@ void main()
     vec3 L = light_pos3 - P.xyz;
 
     f_base_colour = diffuse_albedo;
-
     f_position = P.xyz;
     f_light_direction = L;
     f_normal = N;
+    f_tex_coord = tex_coord; // ← PASS THROUGH
 
     gl_Position = projection * mv_matrix * position_h;
 }
