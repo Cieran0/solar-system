@@ -1,5 +1,4 @@
 #version 420 core
-
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec4 colour;
 layout(location = 2) in vec3 normal;
@@ -10,16 +9,15 @@ out vec3 f_position;
 out vec3 f_light_direction;
 out vec3 f_normal;
 out vec2 f_tex_coord;
+out vec3 FragPos; // ← for shadows
 
 uniform mat4 model, view, projection;
 uniform mat3 normal_matrix;
 uniform vec4 light_pos;
 
-void main()
-{
+void main() {
     vec4 position_h = vec4(position, 1.0);
     vec4 diffuse_albedo = colour;
-
     mat4 mv_matrix = view * model;
     vec4 P = mv_matrix * position_h;
     vec3 N = normalize(normal_matrix * normal);
@@ -30,7 +28,8 @@ void main()
     f_position = P.xyz;
     f_light_direction = L;
     f_normal = N;
-    f_tex_coord = tex_coord; // ← PASS THROUGH
+    f_tex_coord = tex_coord;
+    FragPos = (model * vec4(position, 1.0)).xyz;
 
     gl_Position = projection * mv_matrix * position_h;
 }
