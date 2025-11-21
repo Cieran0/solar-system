@@ -57,8 +57,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let width = 1280;
     let height = 720;
     let mut window = Window::new(width, height, "Solar System")?;
-    let vertex_src = read_to_string("poslight.vert")?;
-    let fragment_src = read_to_string("poslight.frag")?;
+    let vertex_src = read_to_string("shaders/render.vert")?;
+    let fragment_src = read_to_string("shaders/render.frag")?;
     let shader_program = create_shader_program(&vertex_src, &fragment_src)?;
     set_current_program(shader_program);
 

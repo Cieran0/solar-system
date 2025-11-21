@@ -2,3 +2,4 @@
 *.lock
 *.out
 *.ps1
+*.sh
