@@ -3,7 +3,7 @@ use gl::types::GLuint;
 use crate::shaders;
 
 pub trait Shape {
-    fn draw(&self, model: Mat4);
+    fn draw(&self);
 }
 
 pub struct Cube {
@@ -188,12 +188,8 @@ impl Sphere {
 }
 
 impl Shape for Cube {
-    fn draw(&self, model: Mat4) {
+    fn draw(&self) {
         unsafe {
-            let model_loc = gl::GetUniformLocation(shaders::get_current_program(), b"model\0".as_ptr() as *const _);
-            if model_loc != -1 {
-                gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.to_cols_array().as_ptr());
-            }
             gl::BindVertexArray(self.vao);
             gl::DrawArrays(gl::TRIANGLES, 0, self.vertex_count);
         }
@@ -201,12 +197,8 @@ impl Shape for Cube {
 }
 
 impl Shape for Sphere {
-    fn draw(&self, model: Mat4) {
+    fn draw(&self) {
         unsafe {
-            let model_loc = gl::GetUniformLocation(shaders::get_current_program(), b"model\0".as_ptr() as *const _);
-            if model_loc != -1 {
-                gl::UniformMatrix4fv(model_loc, 1, gl::FALSE, model.to_cols_array().as_ptr());
-            }
             gl::BindVertexArray(self.vao);
             gl::DrawArrays(gl::TRIANGLES, 0, self.vertex_count);
         }

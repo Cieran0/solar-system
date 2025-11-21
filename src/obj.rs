@@ -254,7 +254,7 @@ impl ObjModel {
 }
 
 impl Shape for ObjModel {
-    fn draw(&self, _model: Mat4) {
+    fn draw(&self) {
         unsafe {
             gl::BindVertexArray(self.vao);
             gl::DrawElements(gl::TRIANGLES, self.index_count, gl::UNSIGNED_INT, std::ptr::null());
