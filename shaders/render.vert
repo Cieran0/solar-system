@@ -9,7 +9,7 @@ out vec3 f_position;
 out vec3 f_light_direction;
 out vec3 f_normal;
 out vec2 f_tex_coord;
-out vec3 FragPos; // ← for shadows
+out vec3 FragPos; //  for shadows
 
 uniform mat4 model, view, projection;
 uniform mat3 normal_matrix;

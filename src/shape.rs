@@ -94,7 +94,7 @@ impl Cube {
 
 pub struct Sphere {
     vao: GLuint,
-    vbo: [GLuint; 4], // ← NOW 4: pos, colour, normal, texcoord
+    vbo: [GLuint; 4], //  NOW 4: pos, colour, normal, texcoord
     vertex_count: i32,
 }
 
@@ -218,7 +218,7 @@ impl Drop for Sphere {
     fn drop(&mut self) {
         unsafe {
             gl::DeleteVertexArrays(1, &self.vao);
-            gl::DeleteBuffers(4, self.vbo.as_ptr()); // ← 4 now
+            gl::DeleteBuffers(4, self.vbo.as_ptr()); //  4 now
         }
     }
 }
