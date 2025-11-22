@@ -99,7 +99,7 @@ impl ShadowRenderer {
             if success != (gl::TRUE as i32) {
                 let mut len: i32 = 0;
                 gl::GetProgramiv(shader, gl::INFO_LOG_LENGTH, &mut len);
-                let mut buf: Vec<u8> = vec![0u8; (len.max(1) as usize)];
+                let mut buf: Vec<u8> = vec![0u8; len.max(1) as usize];
                 gl::GetProgramInfoLog(
                     shader,
                     len,

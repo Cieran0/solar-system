@@ -6,6 +6,7 @@ mod input_handler;
 mod shape;
 mod obj;
 mod shadow;
+mod skybox;
 use std::{error::Error, fs::{self, read_to_string}, rc::Rc, time::Instant};
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 use crate::{
@@ -17,6 +18,7 @@ use crate::{
     window::Window,
     obj::ObjModel,
     shadow::ShadowRenderer,
+    skybox::Skybox
 };
 
 struct Renderable {
@@ -27,9 +29,16 @@ struct Renderable {
     texture_id: u32,
 }
 
-fn load_raw_rgba_texture(path: &str, width: u32, height: u32) -> Result<u32, Box<dyn std::error::Error>> {
+fn load_rgba_file_data(path: &str, width: u32, height: u32) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let data = fs::read(path)?;
-    assert_eq!(data.len(), (width * height * 4) as usize);
+    if data.len() != (width * height * 4) as usize {
+        return Err(format!("Texture file {} has incorrect size. Expected {} bytes, got {} bytes",
+                          path, width * height * 4, data.len()).into());
+    }
+    Ok(data)
+}
+
+fn create_2d_texture_from_data(data: &[u8], width: u32, height: u32) -> Result<u32, Box<dyn std::error::Error>> {
     let mut texture_id = 0;
     unsafe {
         gl::GenTextures(1, &mut texture_id);
@@ -50,6 +59,57 @@ fn load_raw_rgba_texture(path: &str, width: u32, height: u32) -> Result<u32, Box
         gl::BindTexture(gl::TEXTURE_2D, 0);
     }
     Ok(texture_id)
+}
+
+fn load_rgba_texture(path: &str, width: u32, height: u32) -> Result<u32, Box<dyn std::error::Error>> {
+    let data = load_rgba_file_data(path, width, height)?;
+    create_2d_texture_from_data(&data, width, height)
+}
+
+fn load_skybox_textures(paths: [&str; 6], width: u32, height: u32) -> Result<u32, Box<dyn std::error::Error>> {
+    let mut cubemap_id = 0;
+    unsafe {
+        gl::GenTextures(1, &mut cubemap_id);
+        gl::BindTexture(gl::TEXTURE_CUBE_MAP, cubemap_id);
+        
+        // Define the faces in OpenGL cubemap order
+        const CUBE_MAP_FACES: [u32; 6] = [
+            gl::TEXTURE_CUBE_MAP_POSITIVE_X, // Right
+            gl::TEXTURE_CUBE_MAP_NEGATIVE_X, // Left
+            gl::TEXTURE_CUBE_MAP_POSITIVE_Y, // Top
+            gl::TEXTURE_CUBE_MAP_NEGATIVE_Y, // Bottom
+            gl::TEXTURE_CUBE_MAP_POSITIVE_Z, // Front
+            gl::TEXTURE_CUBE_MAP_NEGATIVE_Z, // Back
+        ];
+        
+        for (i, path) in paths.iter().enumerate() {
+            let data = load_rgba_file_data(path, width, height)?;
+            gl::TexImage2D(
+                CUBE_MAP_FACES[i],
+                0,
+                gl::RGBA8 as i32,
+                width as i32,
+                height as i32,
+                0,
+                gl::RGBA,
+                gl::UNSIGNED_BYTE,
+                data.as_ptr() as *const _,
+            );
+        }
+        
+        // Set texture parameters
+        gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+        gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+        gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
+        gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
+        gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as i32);
+        
+        gl::GenerateMipmap(gl::TEXTURE_CUBE_MAP);
+
+        gl::BindTexture(gl::TEXTURE_CUBE_MAP, 0);
+    }
+    
+    Ok(cubemap_id)
 }
 
 fn print_controls() {
@@ -92,12 +152,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shadow_map_loc = unsafe { gl::GetUniformLocation(shader_program, b"shadow_map\0".as_ptr() as *const _) };
     let shadow_far_loc = unsafe { gl::GetUniformLocation(shader_program, b"shadow_far\0".as_ptr() as *const _) };
 
-    let earth_texture = load_raw_rgba_texture("textures/earth.rgba", 4096, 2048)?;
-    let sun_texture = load_raw_rgba_texture("textures/sun.rgba", 4096, 2048)?;
-    let moon_texture = load_raw_rgba_texture("textures/moon.rgba", 2048, 1024)?;
-    let mercury_texture = load_raw_rgba_texture("textures/mercury.rgba", 2048, 1024)?;
-    let venus_texture = load_raw_rgba_texture("textures/venus.rgba", 2048, 1024)?;
-    let mars_texture = load_raw_rgba_texture("textures/mars.rgba", 2048, 1024)?;
+    let earth_texture = load_rgba_texture("textures/earth.rgba", 4096, 2048)?;
+    let sun_texture = load_rgba_texture("textures/sun.rgba", 4096, 2048)?;
+    let moon_texture = load_rgba_texture("textures/moon.rgba", 2048, 1024)?;
+    let mercury_texture = load_rgba_texture("textures/mercury.rgba", 2048, 1024)?;
+    let venus_texture = load_rgba_texture("textures/venus.rgba", 2048, 1024)?;
+    let mars_texture = load_rgba_texture("textures/mars.rgba", 2048, 1024)?;
+
+    let skybox_texture = load_skybox_textures([
+        "textures/space/right.rgba",
+        "textures/space/left.rgba",
+        "textures/space/top.rgba",
+        "textures/space/bottom.rgba",
+        "textures/space/front.rgba",
+        "textures/space/back.rgba",
+    ], 4096, 4096)?;
+
+    let skybox = Skybox::new(skybox_texture)?;
 
     let shadow_renderer = ShadowRenderer::new(Vec3::ZERO, 4096)?;
 
@@ -327,7 +398,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             use_texture: false,
             texture_id: 0,
         });
-        for _ in 0..4 { ts.pop(); }
+        ts.clear();
 
         // MARS
         let mars_pos = Vec3::new(MARS_ORBIT_RADIUS * mars_orbit.cos(), 0.0, MARS_ORBIT_RADIUS * mars_orbit.sin());
@@ -381,6 +452,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             gl::Viewport(0, 0, win_width, win_height);
         }
 
+        skybox.draw(&view, &projection);
         for r in &renderables {
             let normal_matrix = Mat3::from_mat4(r.model_matrix).inverse().transpose();
             unsafe {
@@ -419,6 +491,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         gl::DeleteTextures(1, &mercury_texture);
         gl::DeleteTextures(1, &venus_texture);
         gl::DeleteTextures(1, &mars_texture);
+        gl::DeleteTextures(1, &skybox_texture);
     }
     shadow_renderer.destroy();
     Ok(())

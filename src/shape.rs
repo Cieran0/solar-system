@@ -1,6 +1,5 @@
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{Vec2, Vec3, Vec4};
 use gl::types::GLuint;
-use crate::shaders;
 
 pub trait Shape {
     fn draw(&self);

@@ -1,7 +1,6 @@
 use std::{collections::HashMap, error::Error, fs::read_to_string};
 use gl::types::{GLuint, GLsizei};
 use crate::shape::Shape;
-use glam::Mat4;
 
 struct ObjData {
     pub positions: Vec<[f32; 3]>,
