@@ -7,18 +7,26 @@ mod shape;
 mod obj;
 mod shadow;
 mod skybox;
-use std::{error::Error, fs::{self, read_to_string}, rc::Rc, time::Instant};
+
+use std::{
+    collections::HashMap,
+    error::Error,
+    fs::{self, read_to_string},
+    rc::Rc,
+    time::Instant,
+};
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
+
 use crate::{
     camera::Camera,
     input_handler::InputHandler,
-    shaders::{create_shader_program, set_current_program},
-    shape::{Sphere, Shape, Cube},
+    shaders::create_shader_program,
+    shape::{Cube, Shape, Sphere},
     transform_stack::TransformStack,
     window::Window,
     obj::ObjModel,
     shadow::ShadowRenderer,
-    skybox::Skybox
+    skybox::Skybox,
 };
 
 struct Renderable {
@@ -29,11 +37,66 @@ struct Renderable {
     texture_id: u32,
 }
 
+struct CelestialBody {
+    radius: f32,
+    orbit_radius: f32, // Distance from parent
+    orbit_speed: f32,
+    rotation_speed: f32,
+    texture: u32,
+    geometry: Rc<dyn Shape>,
+    rotation: f32,      // Spin rotation
+    orbit_angle: f32,   // Angle around parent
+    emit_mode: u32,
+}
+
+impl CelestialBody {
+    fn new(
+        radius: f32,
+        orbit_radius: f32,
+        orbit_speed: f32,
+        rotation_speed: f32,
+        texture: u32,
+        geometry: Rc<dyn Shape>,
+        emit_mode: u32,
+    ) -> Self {
+        Self {
+            radius,
+            orbit_radius,
+            orbit_speed,
+            rotation_speed,
+            texture,
+            geometry,
+            rotation: 0.0,
+            orbit_angle: 0.0,
+            emit_mode,
+        }
+    }
+
+    fn update(&mut self, dt: f32) {
+        self.orbit_angle += self.orbit_speed * dt;
+        self.rotation += self.rotation_speed * dt;
+    }
+
+    // Get relative position to parent (not absolute position)
+    fn get_relative_position(&self) -> Vec3 {
+        Vec3::new(
+            self.orbit_radius * self.orbit_angle.cos(),
+            0.0,
+            self.orbit_radius * self.orbit_angle.sin(),
+        )
+    }
+}
+
 fn load_rgba_file_data(path: &str, width: u32, height: u32) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let data = fs::read(path)?;
     if data.len() != (width * height * 4) as usize {
-        return Err(format!("Texture file {} has incorrect size. Expected {} bytes, got {} bytes",
-                          path, width * height * 4, data.len()).into());
+        return Err(format!(
+            "Texture file {} has incorrect size. Expected {} bytes, got {} bytes",
+            path,
+            width * height * 4,
+            data.len()
+        )
+        .into());
     }
     Ok(data)
 }
@@ -71,7 +134,7 @@ fn load_skybox_textures(paths: [&str; 6], width: u32, height: u32) -> Result<u32
     unsafe {
         gl::GenTextures(1, &mut cubemap_id);
         gl::BindTexture(gl::TEXTURE_CUBE_MAP, cubemap_id);
-        
+
         // Define the faces in OpenGL cubemap order
         const CUBE_MAP_FACES: [u32; 6] = [
             gl::TEXTURE_CUBE_MAP_POSITIVE_X, // Right
@@ -81,7 +144,7 @@ fn load_skybox_textures(paths: [&str; 6], width: u32, height: u32) -> Result<u32
             gl::TEXTURE_CUBE_MAP_POSITIVE_Z, // Front
             gl::TEXTURE_CUBE_MAP_NEGATIVE_Z, // Back
         ];
-        
+
         for (i, path) in paths.iter().enumerate() {
             let data = load_rgba_file_data(path, width, height)?;
             gl::TexImage2D(
@@ -96,19 +159,19 @@ fn load_skybox_textures(paths: [&str; 6], width: u32, height: u32) -> Result<u32
                 data.as_ptr() as *const _,
             );
         }
-        
+
         // Set texture parameters
         gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
         gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
         gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
         gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
         gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as i32);
-        
+
         gl::GenerateMipmap(gl::TEXTURE_CUBE_MAP);
 
         gl::BindTexture(gl::TEXTURE_CUBE_MAP, 0);
     }
-    
+
     Ok(cubemap_id)
 }
 
@@ -138,7 +201,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let vertex_src = read_to_string("shaders/render.vert")?;
     let fragment_src = read_to_string("shaders/render.frag")?;
     let shader_program = create_shader_program(&vertex_src, &fragment_src)?;
-    set_current_program(shader_program);
+    unsafe { gl::UseProgram(shader_program) };
+
 
     let model_loc = unsafe { gl::GetUniformLocation(shader_program, b"model\0".as_ptr() as *const _) };
     let view_loc = unsafe { gl::GetUniformLocation(shader_program, b"view\0".as_ptr() as *const _) };
@@ -158,15 +222,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mercury_texture = load_rgba_texture("textures/mercury.rgba", 2048, 1024)?;
     let venus_texture = load_rgba_texture("textures/venus.rgba", 2048, 1024)?;
     let mars_texture = load_rgba_texture("textures/mars.rgba", 2048, 1024)?;
+    let spacecraft_texture = load_rgba_texture("textures/rocket.rgba", 1024, 1024)?;
 
-    let skybox_texture = load_skybox_textures([
-        "textures/space/right.rgba",
-        "textures/space/left.rgba",
-        "textures/space/top.rgba",
-        "textures/space/bottom.rgba",
-        "textures/space/front.rgba",
-        "textures/space/back.rgba",
-    ], 4096, 4096)?;
+    let skybox_texture = load_skybox_textures(
+        [
+            "textures/space/right.rgba",
+            "textures/space/left.rgba",
+            "textures/space/top.rgba",
+            "textures/space/bottom.rgba",
+            "textures/space/front.rgba",
+            "textures/space/back.rgba",
+        ],
+        4096,
+        4096,
+    )?;
 
     let skybox = Skybox::new(skybox_texture)?;
 
@@ -184,39 +253,43 @@ fn main() -> Result<(), Box<dyn Error>> {
     let sun: Rc<dyn Shape> = Rc::new(Sphere::new(128, 128, Vec4::new(1.0, 0.8, 0.0, 1.0)));
     let earth: Rc<dyn Shape> = Rc::new(ObjModel::new("models/earth.obj")?);
     let moon: Rc<dyn Shape> = Rc::new(Sphere::new(128, 128, Vec4::new(0.5, 0.5, 0.5, 1.0)));
-    let spacecraft: Rc<dyn Shape> = Rc::new(Cube::new());
+    let spacecraft: Rc<dyn Shape> = Rc::new(ObjModel::new("models/rocket.obj")?);
     let mercury: Rc<dyn Shape> = Rc::new(Sphere::new(96, 96, Vec4::new(0.65, 0.57, 0.5, 1.0)));
     let venus: Rc<dyn Shape> = Rc::new(Sphere::new(120, 120, Vec4::new(1.0, 0.95, 0.75, 1.0)));
     let mars: Rc<dyn Shape> = Rc::new(Sphere::new(110, 110, Vec4::new(0.9, 0.4, 0.3, 1.0)));
 
-    const SUN_RADIUS: f32 = 1.0;
-    const MERCURY_RADIUS: f32 = 0.08;
-    const VENUS_RADIUS: f32 = 0.18;
-    const EARTH_RADIUS: f32 = 0.2;
-    const MARS_RADIUS: f32 = 0.12;
-    const MOON_RADIUS: f32 = 0.06;
-    const MOON_ORBIT_RADIUS: f32 = 0.4;
-
-    const MERCURY_ORBIT_RADIUS: f32 = 3.0;   // increased
-    const VENUS_ORBIT_RADIUS: f32 = 5.0;     // increased
-    const EARTH_ORBIT_RADIUS: f32 = 7.0;     // increased
-    const MARS_ORBIT_RADIUS: f32 = 10.0;     // increased
+    let mut celestial_bodies: HashMap<String, CelestialBody> = [
+        (
+            "Sun".to_string(),
+            CelestialBody::new(1.0, 0.0, 0.0, 0.1, sun_texture, Rc::clone(&sun), 1)
+        ),
+        (
+            "Mercury".to_string(),
+            CelestialBody::new(0.08, 3.0, 4.0, 1.0, mercury_texture, Rc::clone(&mercury), 0)
+        ),
+        (
+            "Venus".to_string(),
+            CelestialBody::new(0.18, 5.0, 1.8, 0.5, venus_texture, Rc::clone(&venus), 0)
+        ),
+        (
+            "Earth".to_string(),
+            CelestialBody::new(0.2, 7.0, 0.5, 2.0, earth_texture, Rc::clone(&earth), 0)
+        ),
+        (
+            "Moon".to_string(),
+            CelestialBody::new(0.06, 0.4, 1.5, 1.5, moon_texture, Rc::clone(&moon), 0)
+        ),
+        (
+            "Mars".to_string(),
+            CelestialBody::new(0.12, 10.0, 0.3, 1.8, mars_texture, Rc::clone(&mars), 0)
+        ),
+    ]
+    .into_iter()
+    .collect();
 
     const MOVE_SPEED: f32 = 2.0;
-    const SPACECRAFT_SIZE: f32 = 0.03;
+    const SPACECRAFT_SIZE: f32 = 0.00001;
     const SPACECRAFT_ROT_SPEED: f32 = 1.5;
-
-    let mut sun_spin = 0.0f32;
-    let mut mercury_orbit = 0.0f32;
-    let mut mercury_spin = 0.0f32;
-    let mut venus_orbit = 0.0f32;
-    let mut venus_spin = 0.0f32;
-    let mut earth_orbit = 0.0f32;
-    let mut earth_spin = 0.0f32;
-    let mut mars_orbit = 0.0f32;
-    let mut mars_spin = 0.0f32;
-    let mut moon_orbit = 0.0f32;
-    let mut moon_spin = 0.0f32;
 
     let mut spacecraft_rot = Quat::IDENTITY;
     let mut spacecraft_dist: f32 = 0.3;
@@ -246,62 +319,70 @@ fn main() -> Result<(), Box<dyn Error>> {
             );
         }
 
-        if input_handler.keys_pressed.contains(&glfw::Key::Equal) { sim_time_scale *= 1.2; }
-        if input_handler.keys_pressed.contains(&glfw::Key::Minus) { sim_time_scale /= 1.2; }
+        if input_handler.keys_pressed.contains(&glfw::Key::Equal) {
+            sim_time_scale *= 1.2;
+        }
+        if input_handler.keys_pressed.contains(&glfw::Key::Minus) {
+            sim_time_scale /= 1.2;
+        }
         sim_time_scale = sim_time_scale.clamp(0.01, 10.0);
         let dt = delta * sim_time_scale;
 
-        sun_spin += 0.1 * dt;
-        mercury_orbit += 4.0 * dt;
-        mercury_spin += 1.0 * dt;
-        venus_orbit += 1.8 * dt;
-        venus_spin += 0.5 * dt;
-        earth_orbit += 0.5 * dt;
-        earth_spin += 2.0 * dt;
-        mars_orbit += 0.3 * dt;
-        mars_spin += 1.8 * dt;
-        moon_orbit += 1.5 * dt;
-        moon_spin += 1.5 * dt;
+        // Update all celestial bodies
+        for body in celestial_bodies.values_mut() {
+            body.update(dt);
+        }
 
         let mut rot = Quat::IDENTITY;
-        if input_handler.keys_pressed.contains(&glfw::Key::Left)  { rot = Quat::from_rotation_y(SPACECRAFT_ROT_SPEED * dt) * rot; }
-        if input_handler.keys_pressed.contains(&glfw::Key::Right) { rot = Quat::from_rotation_y(-SPACECRAFT_ROT_SPEED * dt) * rot; }
-        if input_handler.keys_pressed.contains(&glfw::Key::Up)    { rot = rot * Quat::from_rotation_x(SPACECRAFT_ROT_SPEED * dt); }
-        if input_handler.keys_pressed.contains(&glfw::Key::Down)  { rot = rot * Quat::from_rotation_x(-SPACECRAFT_ROT_SPEED * dt); }
+        if input_handler.keys_pressed.contains(&glfw::Key::Left) {
+            rot = Quat::from_rotation_y(SPACECRAFT_ROT_SPEED * dt) * rot;
+        }
+        if input_handler.keys_pressed.contains(&glfw::Key::Right) {
+            rot = Quat::from_rotation_y(-SPACECRAFT_ROT_SPEED * dt) * rot;
+        }
+        if input_handler.keys_pressed.contains(&glfw::Key::Up) {
+            rot = rot * Quat::from_rotation_x(SPACECRAFT_ROT_SPEED * dt);
+        }
+        if input_handler.keys_pressed.contains(&glfw::Key::Down) {
+            rot = rot * Quat::from_rotation_x(-SPACECRAFT_ROT_SPEED * dt);
+        }
         spacecraft_rot = (rot * spacecraft_rot).normalize();
 
-        if input_handler.keys_pressed.contains(&glfw::Key::PageDown) { spacecraft_dist = (spacecraft_dist - 0.1 * dt).max(0.05); }
-        if input_handler.keys_pressed.contains(&glfw::Key::PageUp)   { spacecraft_dist += 0.1 * dt; }
+        if input_handler.keys_pressed.contains(&glfw::Key::PageDown) {
+            spacecraft_dist = (spacecraft_dist - 0.1 * dt).max(0.05);
+        }
+        if input_handler.keys_pressed.contains(&glfw::Key::PageUp) {
+            spacecraft_dist += 0.1 * dt;
+        }
 
-        // Camera view shortcuts
+        // Camera view shortcuts using on-demand position calculation
         if input_handler.keys_pressed.contains(&glfw::Key::Num1) {
             camera.position = Vec3::new(0.0, 2.0, 5.0);
             camera.look_at(Vec3::ZERO);
         }
         if input_handler.keys_pressed.contains(&glfw::Key::Num2) {
-            let earth_pos = Vec3::new(EARTH_ORBIT_RADIUS * earth_orbit.cos(), 0.0, EARTH_ORBIT_RADIUS * earth_orbit.sin());
+            let earth_pos = celestial_bodies["Earth"].get_relative_position();
             camera.position = earth_pos + Vec3::new(0.0, 0.5, 1.0);
             camera.look_at(earth_pos);
         }
         if input_handler.keys_pressed.contains(&glfw::Key::Num3) {
-            let earth_pos = Vec3::new(EARTH_ORBIT_RADIUS * earth_orbit.cos(), 0.0, EARTH_ORBIT_RADIUS * earth_orbit.sin());
-            let moon_pos = earth_pos + Vec3::new(MOON_ORBIT_RADIUS * moon_orbit.cos(), 0.0, MOON_ORBIT_RADIUS * moon_orbit.sin());
+            let earth_pos = celestial_bodies["Earth"].get_relative_position();
+            let moon_pos = earth_pos + celestial_bodies["Moon"].get_relative_position();
             camera.position = moon_pos + Vec3::new(0.0, 0.3, 0.6);
             camera.look_at(moon_pos);
         }
         if input_handler.keys_pressed.contains(&glfw::Key::Num4) {
-            let mars_pos = Vec3::new(MARS_ORBIT_RADIUS * mars_orbit.cos(), 0.0, MARS_ORBIT_RADIUS * mars_orbit.sin());
-
+            let mars_pos = celestial_bodies["Mars"].get_relative_position();
             camera.position = mars_pos + Vec3::new(0.0, 0.3, 0.6);
             camera.look_at(mars_pos);
         }
         if input_handler.keys_pressed.contains(&glfw::Key::Num5) {
-            let mercury_pos = Vec3::new(MERCURY_ORBIT_RADIUS * mercury_orbit.cos(), 0.0, MERCURY_ORBIT_RADIUS * mercury_orbit.sin());
+            let mercury_pos = celestial_bodies["Mercury"].get_relative_position();
             camera.position = mercury_pos + Vec3::new(0.0, 1.0, 2.5);
             camera.look_at(mercury_pos);
         }
         if input_handler.keys_pressed.contains(&glfw::Key::Num6) {
-            let venus_pos = Vec3::new(VENUS_ORBIT_RADIUS * venus_orbit.cos(), 0.0, VENUS_ORBIT_RADIUS * venus_orbit.sin());
+            let venus_pos = celestial_bodies["Venus"].get_relative_position();
             camera.position = venus_pos + Vec3::new(0.0, 1.5, 3.5);
             camera.look_at(venus_pos);
         }
@@ -309,12 +390,24 @@ fn main() -> Result<(), Box<dyn Error>> {
         let fwd = camera.forward();
         let right = fwd.cross(camera.up).normalize();
         let mut vel = Vec3::ZERO;
-        if input_handler.keys_pressed.contains(&glfw::Key::W) { vel += fwd; }
-        if input_handler.keys_pressed.contains(&glfw::Key::S) { vel -= fwd; }
-        if input_handler.keys_pressed.contains(&glfw::Key::A) { vel -= right; }
-        if input_handler.keys_pressed.contains(&glfw::Key::D) { vel += right; }
-        if input_handler.keys_pressed.contains(&glfw::Key::Space)     { vel += camera.up; }
-        if input_handler.keys_pressed.contains(&glfw::Key::LeftShift) { vel -= camera.up; }
+        if input_handler.keys_pressed.contains(&glfw::Key::W) {
+            vel += fwd;
+        }
+        if input_handler.keys_pressed.contains(&glfw::Key::S) {
+            vel -= fwd;
+        }
+        if input_handler.keys_pressed.contains(&glfw::Key::A) {
+            vel -= right;
+        }
+        if input_handler.keys_pressed.contains(&glfw::Key::D) {
+            vel += right;
+        }
+        if input_handler.keys_pressed.contains(&glfw::Key::Space) {
+            vel += camera.up;
+        }
+        if input_handler.keys_pressed.contains(&glfw::Key::LeftShift) {
+            vel -= camera.up;
+        }
         if vel.length_squared() > 0.0 {
             camera.position += vel.normalize() * MOVE_SPEED * delta;
         }
@@ -329,96 +422,88 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut ts = TransformStack::new();
         let mut renderables = Vec::new();
 
-        // SUN
-        let sun_model = ts.current() * Mat4::from_rotation_y(sun_spin) * Mat4::from_scale(Vec3::splat(SUN_RADIUS));
-        renderables.push(Renderable {
-            geometry: Rc::clone(&sun),
-            model_matrix: sun_model,
-            emit_mode: 1,
-            use_texture: true,
-            texture_id: sun_texture,
-        });
+        // SUN (at origin)
+        let sun = &celestial_bodies["Sun"];
+        {
+            let sun_model = ts.current()
+                * Mat4::from_rotation_y(sun.rotation)
+                * Mat4::from_scale(Vec3::splat(sun.radius));
+            renderables.push(Renderable {
+                geometry: Rc::clone(&sun.geometry),
+                model_matrix: sun_model,
+                emit_mode: sun.emit_mode,
+                use_texture: true,
+                texture_id: sun.texture,
+            });
+        }
 
-        // MERCURY
-        let mercury_pos = Vec3::new(MERCURY_ORBIT_RADIUS * mercury_orbit.cos(), 0.0, MERCURY_ORBIT_RADIUS * mercury_orbit.sin());
-        ts.push(Mat4::from_translation(mercury_pos));
-        let mercury_model = ts.current() * Mat4::from_rotation_y(mercury_spin) * Mat4::from_scale(Vec3::splat(MERCURY_RADIUS));
-        renderables.push(Renderable {
-            geometry: Rc::clone(&mercury),
-            model_matrix: mercury_model,
-            emit_mode: 0,
-            use_texture: true,
-            texture_id: mercury_texture,
-        });
-        ts.pop();
+        // PLANETS orbiting the Sun
+        for planet_name in ["Mercury", "Venus", "Earth", "Mars"] {
+            let planet = &celestial_bodies[planet_name];
+            
+            // Push planet's orbital transform around Sun
+            ts.push(Mat4::from_translation(planet.get_relative_position()));
+            
+            // Planet's own rotation and scale
+            let planet_model = ts.current()
+                * Mat4::from_rotation_y(planet.rotation)
+                * Mat4::from_scale(Vec3::splat(planet.radius));
+            renderables.push(Renderable {
+                geometry: Rc::clone(&planet.geometry),
+                model_matrix: planet_model,
+                emit_mode: planet.emit_mode,
+                use_texture: true,
+                texture_id: planet.texture,
+            });
 
-        // VENUS
-        let venus_pos = Vec3::new(VENUS_ORBIT_RADIUS * venus_orbit.cos(), 0.0, VENUS_ORBIT_RADIUS * venus_orbit.sin());
-        ts.push(Mat4::from_translation(venus_pos));
-        let venus_model = ts.current() * Mat4::from_rotation_y(venus_spin) * Mat4::from_scale(Vec3::splat(VENUS_RADIUS));
-        renderables.push(Renderable {
-            geometry: Rc::clone(&venus),
-            model_matrix: venus_model,
-            emit_mode: 0,
-            use_texture: true,
-            texture_id: venus_texture,
-        });
-        ts.pop();
+            // MOON and SPACECRAFT (only for Earth)
+            if planet_name == "Earth" {
+                let moon = &celestial_bodies["Moon"];
+                
+                // Push Moon's orbital transform around Earth
+                ts.push(Mat4::from_translation(moon.get_relative_position()));
+                
+                // Moon's own rotation and scale
+                let moon_model = ts.current()
+                    * Mat4::from_rotation_y(moon.rotation)
+                    * Mat4::from_scale(Vec3::splat(moon.radius));
+                renderables.push(Renderable {
+                    geometry: Rc::clone(&moon.geometry),
+                    model_matrix: moon_model,
+                    emit_mode: moon.emit_mode,
+                    use_texture: true,
+                    texture_id: moon.texture,
+                });
 
-        // EARTH + MOON + SPACECRAFT
-        let earth_pos = Vec3::new(EARTH_ORBIT_RADIUS * earth_orbit.cos(), 0.0, EARTH_ORBIT_RADIUS * earth_orbit.sin());
-        ts.push(Mat4::from_translation(earth_pos));
-        let earth_model = ts.current() * Mat4::from_rotation_y(earth_spin) * Mat4::from_scale(Vec3::splat(EARTH_RADIUS));
-        renderables.push(Renderable {
-            geometry: Rc::clone(&earth),
-            model_matrix: earth_model,
-            emit_mode: 0,
-            use_texture: true,
-            texture_id: earth_texture,
-        });
+                // SPACECRAFT relative to Moon
+                ts.push(Mat4::from_quat(spacecraft_rot));
+                ts.push(Mat4::from_translation(Vec3::new(0.0, 0.0, spacecraft_dist)));
+                let spacecraft_model = ts.current()
+                    * Mat4::from_scale(Vec3::splat(SPACECRAFT_SIZE));
 
-        let moon_pos = Vec3::new(MOON_ORBIT_RADIUS * moon_orbit.cos(), 0.0, MOON_ORBIT_RADIUS * moon_orbit.sin());
-        ts.push(Mat4::from_translation(moon_pos));
-        let moon_model = ts.current() * Mat4::from_rotation_y(moon_spin) * Mat4::from_scale(Vec3::splat(MOON_RADIUS));
-        renderables.push(Renderable {
-            geometry: Rc::clone(&moon),
-            model_matrix: moon_model,
-            emit_mode: 0,
-            use_texture: true,
-            texture_id: moon_texture,
-        });
-
-        ts.push(Mat4::from_quat(spacecraft_rot));
-        ts.push(Mat4::from_translation(Vec3::new(0.0, 0.0, spacecraft_dist)));
-        let spacecraft_model = ts.current() * Mat4::from_scale(Vec3::new(SPACECRAFT_SIZE * 0.6, SPACECRAFT_SIZE * 0.5, SPACECRAFT_SIZE * 1.8));
-        renderables.push(Renderable {
-            geometry: Rc::clone(&spacecraft),
-            model_matrix: spacecraft_model,
-            emit_mode: 0,
-            use_texture: false,
-            texture_id: 0,
-        });
-        ts.clear();
-
-        // MARS
-        let mars_pos = Vec3::new(MARS_ORBIT_RADIUS * mars_orbit.cos(), 0.0, MARS_ORBIT_RADIUS * mars_orbit.sin());
-        ts.push(Mat4::from_translation(mars_pos));
-        let mars_model = ts.current() * Mat4::from_rotation_y(mars_spin) * Mat4::from_scale(Vec3::splat(MARS_RADIUS));
-        renderables.push(Renderable {
-            geometry: Rc::clone(&mars),
-            model_matrix: mars_model,
-            emit_mode: 0,
-            use_texture: true,
-            texture_id: mars_texture,
-        });
-        ts.pop();
+                renderables.push(Renderable {
+                    geometry: Rc::clone(&spacecraft),
+                    model_matrix: spacecraft_model,
+                    emit_mode: 0,
+                    use_texture: true,
+                    texture_id: spacecraft_texture,
+                });
+                // Pop spacecraft transforms
+                ts.pop(); // distance
+                ts.pop(); // rotation
+                // Pop Moon position
+                ts.pop();
+            }
+            
+            // Pop planet position
+            ts.pop();
+        }
 
         // === SHADOW PASS ===
         shadow_renderer.render_depth_pass(&renderables);
         unsafe {
             gl::UseProgram(shader_program);
         }
-        set_current_program(shader_program);
         unsafe {
             gl::Viewport(0, 0, win_width, win_height);
         }

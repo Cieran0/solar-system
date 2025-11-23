@@ -25,12 +25,6 @@ impl TransformStack {
         }
     }
 
-    pub fn clear(&mut self) {
-        while self.stack.len() > 1 {
-            self.pop();
-        }
-    }
-
     // Get top transform from the stack 
     pub fn current(&self) -> Mat4 {
         *self.stack.last().unwrap()

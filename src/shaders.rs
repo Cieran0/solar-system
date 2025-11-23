@@ -1,18 +1,4 @@
-use std::{cell::Cell, ffi::{CStr, CString}};
-
-// Hold current shader so accessible anywhere
-// Global variables in rust are weird due to forced thread safety
-thread_local! {
-    static CURRENT_PROGRAM: Cell<u32> = Cell::new(0);
-}
-
-pub fn set_current_program(program: u32) {
-    CURRENT_PROGRAM.with(|p| p.set(program));
-}
-
-pub fn get_current_program() -> u32 {
-    CURRENT_PROGRAM.with(|p| p.get())
-}
+use std::ffi::{CStr, CString};
 
 // Compile shader from a string
 pub fn compile_shader(source: &str, shader_type: u32) -> Result<u32, String> {

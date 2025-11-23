@@ -3,7 +3,7 @@ use std::fs;
 use gl::types::GLuint;
 use glam::{Mat3, Mat4};
 
-use crate::shaders::{create_shader_program, get_current_program};
+use crate::shaders::create_shader_program;
 
 pub struct Skybox {
     vao: GLuint,
