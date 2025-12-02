@@ -1,6 +1,7 @@
 use std::{fs, ptr};
 use gl::types::{GLenum, GLuint};
 use glam::{Mat4, Vec3};
+use crate::solar_system::Renderable;
 
 pub struct ShadowRenderer {
     pub depth_cubemap: GLuint,
@@ -158,7 +159,7 @@ impl ShadowRenderer {
         ]
     }
 
-    pub fn render_depth_pass(&self, renderables: &[super::Renderable]) {
+    pub fn render_depth_pass(&self, renderables: &[Renderable]) {
         unsafe {
             // Use depth-pass program
             gl::UseProgram(self.shader);

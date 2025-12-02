@@ -1,0 +1,474 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use glam::{Mat4, Quat, Vec3, Vec4};
+use glfw::{Action, Key, WindowEvent};
+
+use crate::{
+    camera::Camera,
+    qoi::QoiImage,
+    shape::{Shape, Sphere},
+    shaders::create_shader_program,
+    skybox::Skybox,
+    shadow::ShadowRenderer,
+    texture,
+    transform_stack::TransformStack,
+    uniforms::Uniforms,
+    window::Window,
+    obj::ObjModel
+};
+
+const MOVE_SPEED: f32 = 2.0;
+const SPACECRAFT_SIZE: f32 = 0.00001;
+const SPACECRAFT_ROT_SPEED: f32 = 1.5;
+const MOUSE_SENSITIVITY: f32 = 0.001;
+
+pub struct SolarSystem {
+    camera: Camera,
+    projection: Mat4,
+    shader_program: u32,
+    uniforms: Uniforms,
+    shadow_renderer: ShadowRenderer,
+    skybox: Skybox,
+    celestial_bodies: HashMap<String, CelestialBody>,
+    spacecraft: Rc<dyn Shape>,
+    spacecraft_texture: u32,
+    spacecraft_rotation: Quat,
+    spacecraft_distance: f32,
+    sim_time_scale: f32,
+    win_width: i32,
+    win_height: i32,
+    keys_pressed: HashMap<Key, bool>,
+    mouse_pressed: bool,
+    last_mouse_pos: Option<(f64, f64)>,
+    window: Window,
+}
+
+pub struct Renderable {
+    pub geometry: Rc<dyn Shape>,
+    pub model_matrix: Mat4,
+    pub emit_mode: u32,
+    pub use_texture: bool,
+    pub texture_id: u32,
+}
+
+pub struct CelestialBody {
+    pub radius: f32,
+    pub orbit_radius: f32,
+    pub orbit_speed: f32,
+    pub rotation_speed: f32,
+    pub texture: u32,
+    pub geometry: Rc<dyn Shape>,
+    pub rotation: f32,
+    pub orbit_angle: f32,
+    pub emit_mode: u32,
+    pub inclination: f32,
+}
+
+impl CelestialBody {
+    pub fn new(
+        radius: f32,
+        orbit_radius: f32,
+        orbit_speed: f32,
+        rotation_speed: f32,
+        inclination: f32,
+        texture: u32,
+        geometry: Rc<dyn Shape>,
+        emit_mode: u32,
+    ) -> Self {
+        Self {
+            radius,
+            orbit_radius,
+            orbit_speed,
+            rotation_speed,
+            texture,
+            geometry,
+            rotation: 0.0,
+            orbit_angle: 0.0,
+            emit_mode,
+            inclination,
+        }
+    }
+
+    pub fn update(&mut self, dt: f32) {
+        self.orbit_angle += self.orbit_speed * dt;
+        self.rotation += self.rotation_speed * dt;
+    }
+
+    pub fn get_relative_position(&self) -> Vec3 {
+        // Position in the orbital plane before applying inclination
+        let x = self.orbit_radius * self.orbit_angle.cos();
+        let mut z = self.orbit_radius * self.orbit_angle.sin();
+        
+        // This tilts the orbital plane by the inclination angle
+        let y = z * self.inclination.sin();
+        z = z * self.inclination.cos();
+        
+        Vec3::new(x, y, z)
+    }
+}
+
+impl SolarSystem {
+    pub fn new(window: Window, images: HashMap<String, QoiImage>) -> Result<Self, Box<dyn std::error::Error>> {
+        let width = window.get_width() as i32;
+        let height = window.get_height() as i32;
+
+        unsafe {
+            gl::Enable(gl::DEPTH_TEST);
+        }
+
+        let vertex_src = std::fs::read_to_string("shaders/render.vert")?;
+        let fragment_src = std::fs::read_to_string("shaders/render.frag")?;
+        let shader_program = create_shader_program(&vertex_src, &fragment_src)?;
+        unsafe { gl::UseProgram(shader_program) };
+
+        let uniforms = Uniforms::new(shader_program);
+        let projection = Mat4::perspective_rh(
+            std::f32::consts::PI / 4.0,
+            width as f32 / height as f32,
+            0.1,
+            100.0,
+        );
+
+        let earth_texture = load_texture("textures/earth.qoi", &images)?;
+        let sun_texture = load_texture("textures/sun.qoi", &images)?;
+        let moon_texture = load_texture("textures/moon.qoi", &images)?;
+        let mercury_texture = load_texture("textures/mercury.qoi", &images)?;
+        let venus_texture = load_texture("textures/venus.qoi", &images)?;
+        let mars_texture = load_texture("textures/mars.qoi", &images)?;
+        let spacecraft_texture = load_texture("textures/rocket.qoi", &images)?;
+
+        let skybox_faces = [
+            "textures/space/right.qoi",
+            "textures/space/left.qoi",
+            "textures/space/top.qoi",
+            "textures/space/bottom.qoi",
+            "textures/space/front.qoi",
+            "textures/space/back.qoi",
+        ];
+
+        let skybox_raws: [&QoiImage; 6] = skybox_faces
+            .iter()
+            .map(|path| images.get(*path).expect(&format!("Skybox texture missing: {}", path)))
+            .collect::<Vec<&QoiImage>>()
+            .try_into()
+            .expect("Incorrect number of skybox faces");
+
+        let skybox_texture = texture::create_cubemap_from_images(skybox_raws)?;
+        let skybox = Skybox::new(skybox_texture)?;
+        let shadow_renderer = ShadowRenderer::new(Vec3::ZERO, 4096)?;
+
+        let mut camera = Camera::new(Vec3::new(0.0, 2.0, 5.0));
+        camera.look_at(Vec3::ZERO);
+
+        let sun: Rc<dyn Shape> = Rc::new(Sphere::new(128, 128, Vec4::new(1.0, 0.8, 0.0, 1.0)));
+        let earth: Rc<dyn Shape> = Rc::new(ObjModel::new("models/earth.obj")?);
+        let moon: Rc<dyn Shape> = Rc::new(Sphere::new(128, 128, Vec4::new(0.5, 0.5, 0.5, 1.0)));
+        let spacecraft: Rc<dyn Shape> = Rc::new(ObjModel::new("models/rocket.obj")?);
+        let mercury: Rc<dyn Shape> = Rc::new(Sphere::new(96, 96, Vec4::new(0.65, 0.57, 0.5, 1.0)));
+        let venus: Rc<dyn Shape> = Rc::new(Sphere::new(120, 120, Vec4::new(1.0, 0.95, 0.75, 1.0)));
+        let mars: Rc<dyn Shape> = Rc::new(Sphere::new(110, 110, Vec4::new(0.9, 0.4, 0.3, 1.0)));
+
+        let celestial_bodies: HashMap<String, CelestialBody> = [
+            ("Sun".to_string(), CelestialBody::new(1.0, 0.0, 0.0, 0.1, 0.0, sun_texture, Rc::clone(&sun), 1)),
+            ("Mercury".to_string(), CelestialBody::new(0.067, 3.0, 4.0, 1.0, 8.0_f32.to_radians(), mercury_texture, Rc::clone(&mercury), 0)),
+            ("Venus".to_string(), CelestialBody::new(0.18, 5.0, 1.8, 0.5, 12_f32.to_radians(), venus_texture, Rc::clone(&venus), 0)),
+            ("Earth".to_string(), CelestialBody::new(0.2, 7.0, 0.5, 2.0, 0.0_f32.to_radians(), earth_texture, Rc::clone(&earth), 0)),
+            ("Moon".to_string(), CelestialBody::new(0.05, 0.4, 1.5, 1.5, 5.6_f32.to_radians(), moon_texture, Rc::clone(&moon), 0)),
+            ("Mars".to_string(), CelestialBody::new(0.12, 10.0, 0.3, 1.8, -7_f32.to_radians(), mars_texture, Rc::clone(&mars), 0)),
+        ].into_iter().collect();
+
+        Ok(Self {
+            window,
+            camera,
+            projection,
+            shader_program,
+            uniforms,
+            shadow_renderer,
+            skybox,
+            celestial_bodies,
+            spacecraft,
+            spacecraft_texture,
+            spacecraft_rotation: Quat::IDENTITY,
+            spacecraft_distance: 0.3,
+            sim_time_scale: 1.0,
+            win_width: width,
+            win_height: height,
+            keys_pressed: HashMap::new(),
+            mouse_pressed: false,
+            last_mouse_pos: None,
+        })
+    }
+
+    pub fn handle_events(&mut self) {
+        self.window.poll_events();
+        let events: Vec<_> = glfw::flush_messages(&self.window.events).collect();
+        for (_, event) in events {
+            match event {
+                WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
+                    self.window.set_should_close(true);
+                }
+                WindowEvent::Key(key, _, Action::Press, _) => {
+                    self.keys_pressed.insert(key, true);
+                }
+                WindowEvent::Key(key, _, Action::Release, _) => {
+                    self.keys_pressed.insert(key, false);
+                }
+                WindowEvent::CursorPos(xpos, ypos) => {
+                    if self.mouse_pressed {
+                        if let Some((last_x, last_y)) = self.last_mouse_pos {
+                            let dx = (xpos - last_x) as f32;
+                            let dy = (ypos - last_y) as f32;
+                            self.camera.yaw += dx * MOUSE_SENSITIVITY;
+                            self.camera.pitch -= dy * MOUSE_SENSITIVITY;
+                            self.camera.clamp_pitch();
+                        }
+                    }
+                    self.last_mouse_pos = Some((xpos, ypos));
+                }
+                WindowEvent::MouseButton(glfw::MouseButton::Left, action, _) => {
+                    self.mouse_pressed = action == Action::Press;
+                    if self.mouse_pressed {
+                        let (x, y) = self.window.get_cursor_pos();
+                        self.last_mouse_pos = Some((x, y));
+                    }
+                }
+                WindowEvent::FramebufferSize(width, height) => {
+                    self.win_width = width;
+                    self.win_height = height;
+                    unsafe { gl::Viewport(0, 0, width, height); }
+                    self.projection = Mat4::perspective_rh(
+                        std::f32::consts::PI / 4.0,
+                        width as f32 / height as f32,
+                        0.1,
+                        100.0,
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn update(&mut self, delta_time: f32) {
+        let dt = delta_time * self.sim_time_scale;
+
+        for body in self.celestial_bodies.values_mut() {
+            body.update(dt);
+        }
+
+        let mut rot = Quat::IDENTITY;
+        if *self.keys_pressed.get(&Key::Left).unwrap_or(&false) {
+            rot = Quat::from_rotation_y(SPACECRAFT_ROT_SPEED * dt) * rot;
+        }
+        if *self.keys_pressed.get(&Key::Right).unwrap_or(&false) {
+            rot = Quat::from_rotation_y(-SPACECRAFT_ROT_SPEED * dt) * rot;
+        }
+        if *self.keys_pressed.get(&Key::Up).unwrap_or(&false) {
+            rot = rot * Quat::from_rotation_x(SPACECRAFT_ROT_SPEED * dt);
+        }
+        if *self.keys_pressed.get(&Key::Down).unwrap_or(&false) {
+            rot = rot * Quat::from_rotation_x(-SPACECRAFT_ROT_SPEED * dt);
+        }
+        self.spacecraft_rotation = (rot * self.spacecraft_rotation).normalize();
+
+        if *self.keys_pressed.get(&Key::PageDown).unwrap_or(&false) {
+            self.spacecraft_distance = (self.spacecraft_distance - 0.1 * dt).max(0.05);
+        }
+        if *self.keys_pressed.get(&Key::PageUp).unwrap_or(&false) {
+            self.spacecraft_distance += 0.1 * dt;
+        }
+
+        if *self.keys_pressed.get(&Key::Equal).unwrap_or(&false) {
+            self.sim_time_scale *= 1.2;
+        }
+        if *self.keys_pressed.get(&Key::Minus).unwrap_or(&false) {
+            self.sim_time_scale /= 1.2;
+        }
+        self.sim_time_scale = self.sim_time_scale.clamp(0.01, 10.0);
+
+        // Camera view shortcuts
+        if *self.keys_pressed.get(&Key::Num1).unwrap_or(&false) {
+            self.camera.position = Vec3::new(0.0, 2.0, 5.0);
+            self.camera.look_at(Vec3::ZERO);
+        }
+        if *self.keys_pressed.get(&Key::Num2).unwrap_or(&false) {
+            let earth_pos = self.celestial_bodies["Earth"].get_relative_position();
+            self.camera.position = earth_pos + Vec3::new(0.0, 0.5, 1.0);
+            self.camera.look_at(earth_pos);
+        }
+        if *self.keys_pressed.get(&Key::Num3).unwrap_or(&false) {
+            let earth_pos = self.celestial_bodies["Earth"].get_relative_position();
+            let moon_pos = earth_pos + self.celestial_bodies["Moon"].get_relative_position();
+            self.camera.position = moon_pos + Vec3::new(0.0, 0.3, 0.6);
+            self.camera.look_at(moon_pos);
+        }
+        if *self.keys_pressed.get(&Key::Num4).unwrap_or(&false) {
+            let mars_pos = self.celestial_bodies["Mars"].get_relative_position();
+            self.camera.position = mars_pos + Vec3::new(0.0, 0.3, 0.6);
+            self.camera.look_at(mars_pos);
+        }
+        if *self.keys_pressed.get(&Key::Num5).unwrap_or(&false) {
+            let mercury_pos = self.celestial_bodies["Mercury"].get_relative_position();
+            self.camera.position = mercury_pos + Vec3::new(0.0, 1.0, 2.5);
+            self.camera.look_at(mercury_pos);
+        }
+        if *self.keys_pressed.get(&Key::Num6).unwrap_or(&false) {
+            let venus_pos = self.celestial_bodies["Venus"].get_relative_position();
+            self.camera.position = venus_pos + Vec3::new(0.0, 1.5, 3.5);
+            self.camera.look_at(venus_pos);
+        }
+
+        // Camera movement
+        let fwd = self.camera.forward();
+        let right = fwd.cross(self.camera.up).normalize();
+        let mut vel = Vec3::ZERO;
+        if *self.keys_pressed.get(&Key::W).unwrap_or(&false) {
+            vel += fwd;
+        }
+        if *self.keys_pressed.get(&Key::S).unwrap_or(&false) {
+            vel -= fwd;
+        }
+        if *self.keys_pressed.get(&Key::A).unwrap_or(&false) {
+            vel -= right;
+        }
+        if *self.keys_pressed.get(&Key::D).unwrap_or(&false) {
+            vel += right;
+        }
+        if *self.keys_pressed.get(&Key::Space).unwrap_or(&false) {
+            vel += self.camera.up;
+        }
+        if *self.keys_pressed.get(&Key::LeftShift).unwrap_or(&false) {
+            vel -= self.camera.up;
+        }
+        if vel.length_squared() > 0.0 {
+            self.camera.position += vel.normalize() * MOVE_SPEED * delta_time;
+        }
+    }
+
+    pub fn draw(&mut self) {
+        let view = self.camera.view_matrix();
+
+        unsafe {
+            gl::ClearColor(0.0, 0.0, 0.0, 1.0);
+            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+        }
+
+        let mut ts = TransformStack::new();
+        let mut renderables = Vec::new();
+
+        let sun = &self.celestial_bodies["Sun"];
+        {
+            let sun_model = ts.current()
+                * Mat4::from_rotation_y(sun.rotation)
+                * Mat4::from_scale(Vec3::splat(sun.radius));
+            renderables.push(Renderable {
+                geometry: Rc::clone(&sun.geometry),
+                model_matrix: sun_model,
+                emit_mode: sun.emit_mode,
+                use_texture: true,
+                texture_id: sun.texture,
+            });
+        }
+
+        for planet_name in ["Mercury", "Venus", "Earth", "Mars"] {
+            let planet = &self.celestial_bodies[planet_name];
+            ts.push(Mat4::from_translation(planet.get_relative_position()));
+            let planet_model = ts.current()
+                * Mat4::from_rotation_y(planet.rotation)
+                * Mat4::from_scale(Vec3::splat(planet.radius));
+            renderables.push(Renderable {
+                geometry: Rc::clone(&planet.geometry),
+                model_matrix: planet_model,
+                emit_mode: planet.emit_mode,
+                use_texture: true,
+                texture_id: planet.texture,
+            });
+
+            if planet_name == "Earth" {
+                let moon = &self.celestial_bodies["Moon"];
+                ts.push(Mat4::from_translation(moon.get_relative_position()));
+                let moon_model = ts.current()
+                    * Mat4::from_rotation_y(moon.rotation)
+                    * Mat4::from_scale(Vec3::splat(moon.radius));
+                renderables.push(Renderable {
+                    geometry: Rc::clone(&moon.geometry),
+                    model_matrix: moon_model,
+                    emit_mode: moon.emit_mode,
+                    use_texture: true,
+                    texture_id: moon.texture,
+                });
+
+                ts.push(Mat4::from_quat(self.spacecraft_rotation));
+                ts.push(Mat4::from_translation(Vec3::new(0.0, 0.0, self.spacecraft_distance)));
+                let spacecraft_model = ts.current() * Mat4::from_scale(Vec3::splat(SPACECRAFT_SIZE));
+                renderables.push(Renderable {
+                    geometry: Rc::clone(&self.spacecraft),
+                    model_matrix: spacecraft_model,
+                    emit_mode: 0,
+                    use_texture: true,
+                    texture_id: self.spacecraft_texture,
+                });
+
+                ts.pop(); // distance
+                ts.pop(); // rotation
+                ts.pop(); // moon
+            }
+            ts.pop(); // planet
+        }
+
+        self.shadow_renderer.render_depth_pass(&renderables);
+
+        unsafe {
+            gl::UseProgram(self.shader_program);
+        }
+
+        self.uniforms.set_view_matrix(&view);
+        self.uniforms.set_projection_matrix(&self.projection);
+        self.uniforms.set_light_pos(Vec4::new(0.0, 0.0, 0.0, 1.0));
+        self.uniforms.set_light_pos_world(Vec3::ZERO);
+        self.uniforms.set_shadow_map(1);
+        self.uniforms.set_shadow_far(self.shadow_renderer.shadow_far);
+
+        unsafe {
+            gl::ActiveTexture(gl::TEXTURE1);
+            gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.shadow_renderer.depth_cubemap);
+            gl::Viewport(0, 0, self.win_width, self.win_height);
+        }
+
+        self.skybox.draw(&view, &self.projection);
+
+        for r in &renderables {
+            self.uniforms.set_model_matrix(&r.model_matrix);
+            self.uniforms.set_normal_matrix(&r.model_matrix);
+            self.uniforms.set_emit_mode(r.emit_mode);
+            self.uniforms.set_use_texture(r.use_texture);
+            if r.use_texture {
+                unsafe {
+                    gl::ActiveTexture(gl::TEXTURE0);
+                    gl::BindTexture(gl::TEXTURE_2D, r.texture_id);
+                }
+                self.uniforms.set_base_texture(0);
+            }
+            r.geometry.draw();
+        }
+    }
+
+    pub fn should_close(&self) -> bool {
+        self.window.should_close()
+    }
+
+    pub fn swap_buffers(&mut self) {
+        self.window.swap_buffers();
+    }
+
+    pub fn cleanup(&mut self) {
+        unsafe {
+            gl::DeleteProgram(self.shader_program);
+        }
+    }
+}
+
+fn load_texture(name: &str, images: &HashMap<String, QoiImage>) -> Result<u32, Box<dyn std::error::Error>> {
+    let image = images.get(name).expect(&format!("{} texture missing", name));
+    texture::create_texture_from_image(image)
+}
