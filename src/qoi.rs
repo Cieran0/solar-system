@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 
@@ -33,7 +34,7 @@ const QOI_MASK_2: u8 = 0xC0;
 const QOI_MAGIC: u32 = ('q' as u32) << 24 | ('o' as u32) << 16 | ('i' as u32) << 8 | ('f' as u32);
 
 
-fn color_hash(px: Rgba) -> usize {
+fn colour_hash(px: Rgba) -> usize {
     px.r as usize * 3 +
     px.g as usize * 5 +
     px.b as usize * 7 +
@@ -140,7 +141,7 @@ fn process_op(
         _ => {}
     };
 
-    index[color_hash(*px) & 63] = *px;
+    index[colour_hash(*px) & 63] = *px;
 
     Ok(())
 }
@@ -175,7 +176,7 @@ fn decode_chunks(bytes: &[u8], mut p: usize, desc: &QoiDesc, channels: usize) ->
 }
 
 
-pub fn qoi_decode(bytes: &[u8], req_channels: usize, desc: &mut QoiDesc) -> Result<Vec<u8>, String> {
+pub fn decode(bytes: &[u8], req_channels: usize, desc: &mut QoiDesc) -> Result<Vec<u8>, String> {
     let p = parse_header(bytes, desc)?;
 
     let channels = if req_channels == 0 {
@@ -187,8 +188,14 @@ pub fn qoi_decode(bytes: &[u8], req_channels: usize, desc: &mut QoiDesc) -> Resu
     decode_chunks(bytes, p, desc, channels)
 }
 
+#[derive(Debug)]
+pub struct RawImage {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
 
-pub fn read(filename: &str, desc: &mut QoiDesc, channels: usize) -> Result<Vec<u8>, String> {
+pub fn read_file(filename: &str, desc: &mut QoiDesc, channels: usize) -> Result<Vec<u8>, String> {
     let mut file = File::open(filename)
         .map_err(|e| format!("Failed to open {}: {}", filename, e))?;
 
@@ -196,5 +203,15 @@ pub fn read(filename: &str, desc: &mut QoiDesc, channels: usize) -> Result<Vec<u
     file.read_to_end(&mut data)
         .map_err(|e| format!("Failed to read {}: {}", filename, e))?;
 
-    qoi_decode(&data, channels, desc)
+    decode(&data, channels, desc)
+}
+
+pub fn read_as_raw(path: &str) -> Result<RawImage, Box<dyn Error>> {
+    let mut desc = QoiDesc { width: 0, height: 0, channels: 0, colorspace: 0 };
+    let data = read_file(path, &mut desc, 4)?;
+    Ok(RawImage {
+        data,
+        width: desc.width,
+        height: desc.height,
+    })
 }

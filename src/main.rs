@@ -8,18 +8,16 @@ mod obj;
 mod shadow;
 mod skybox;
 mod qoi;
+mod texture;
 
 use std::{
-    collections::HashMap,
-    error::Error,
-    fs::read_to_string,
-    rc::Rc,
-    time::Instant,
+    collections::HashMap, error::Error, fs::read_to_string, io::{self, Write}, path::Path, rc::Rc, time::Instant
 };
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
+use walkdir::WalkDir;
 
 use crate::{
-    camera::Camera, input_handler::InputHandler, obj::ObjModel, qoi::QoiDesc, shaders::create_shader_program, shadow::ShadowRenderer, shape::{Shape, Sphere}, skybox::Skybox, transform_stack::TransformStack, window::Window
+    camera::Camera, input_handler::InputHandler, obj::ObjModel, qoi::RawImage, shaders::create_shader_program, shadow::ShadowRenderer, shape::{Shape, Sphere}, skybox::Skybox, transform_stack::TransformStack, window::Window
 };
 
 struct Renderable {
@@ -80,79 +78,6 @@ impl CelestialBody {
     }
 }
 
-fn load_qoi_texture(path: &str) -> Result<u32, Box<dyn std::error::Error>> {
-    let mut desc = QoiDesc { width: 0, height: 0, channels: 0, colorspace: 0 };
-    let data = qoi::read(path, &mut desc, 4)?;
-
-    let mut texture_id = 0;
-    unsafe {
-        gl::GenTextures(1, &mut texture_id);
-        gl::BindTexture(gl::TEXTURE_2D, texture_id);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-        gl::TexImage2D(
-            gl::TEXTURE_2D,
-            0,
-            gl::RGBA8 as i32,
-            desc.width as i32,
-            desc.height as i32,
-            0,
-            gl::RGBA,
-            gl::UNSIGNED_BYTE,
-            data.as_ptr() as *const _,
-        );
-        gl::BindTexture(gl::TEXTURE_2D, 0);
-    }
-    Ok(texture_id)
-}
-
-fn load_skybox_textures(paths: [&str; 6]) -> Result<u32, Box<dyn std::error::Error>> {
-    let mut cubemap_id = 0;
-    unsafe {
-        gl::GenTextures(1, &mut cubemap_id);
-        gl::BindTexture(gl::TEXTURE_CUBE_MAP, cubemap_id);
-
-        // Define the faces in OpenGL cubemap order
-        const CUBE_MAP_FACES: [u32; 6] = [
-            gl::TEXTURE_CUBE_MAP_POSITIVE_X, // Right
-            gl::TEXTURE_CUBE_MAP_NEGATIVE_X, // Left
-            gl::TEXTURE_CUBE_MAP_POSITIVE_Y, // Top
-            gl::TEXTURE_CUBE_MAP_NEGATIVE_Y, // Bottom
-            gl::TEXTURE_CUBE_MAP_POSITIVE_Z, // Front
-            gl::TEXTURE_CUBE_MAP_NEGATIVE_Z, // Back
-        ];
-
-        for (i, path) in paths.iter().enumerate() {
-            let mut desc = QoiDesc { width: 0, height: 0, channels: 0, colorspace: 0 };
-            let data = qoi::read(path, &mut desc, 4)?;
-            gl::TexImage2D(
-                CUBE_MAP_FACES[i],
-                0,
-                gl::RGBA8 as i32,
-                desc.width as i32,
-                desc.height as i32,
-                0,
-                gl::RGBA,
-                gl::UNSIGNED_BYTE,
-                data.as_ptr() as *const _,
-            );
-        }
-
-        // Set texture parameters
-        gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-        gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-        gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
-        gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
-        gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as i32);
-
-        gl::GenerateMipmap(gl::TEXTURE_CUBE_MAP);
-
-        gl::BindTexture(gl::TEXTURE_CUBE_MAP, 0);
-    }
-
-    Ok(cubemap_id)
-}
-
 fn print_controls() {
     println!("=== Controls ===");
     println!("Camera movement: W/A/S/D + Space (up) / Left Shift (down)");
@@ -163,8 +88,33 @@ fn print_controls() {
     println!("================");
 }
 
+fn find_qoi_files(root: &str) -> impl Iterator<Item = String> + '_ {
+    WalkDir::new(root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .map(|e| e.into_path())
+        .filter(|p| p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("qoi")))
+        .filter_map(|p| p.to_str().map(|s| s.to_owned()))
+}
+
+fn load_texture(name: &str, raw_images: &HashMap<String, RawImage>) -> Result<u32, Box<dyn Error>> {
+    let raw = raw_images.get(name).expect(&format!("{} texture missing", name));
+    texture::create_texture_from_raw(raw)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     print_controls();
+    print!("Loading images...");
+    io::stdout().flush()?;
+
+    let raw_images: HashMap<String, RawImage> = find_qoi_files("textures")
+        .map(|path| {
+            let image = qoi::read_as_raw(&path)?;
+            Ok((path, image))
+        })
+    .collect::<Result<HashMap<String, RawImage>, Box<dyn Error>>>()?;
+    println!("Done!");
 
     let width = 1280i32;
     let height = 720i32;
@@ -194,24 +144,31 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shadow_map_loc = unsafe { gl::GetUniformLocation(shader_program, b"shadow_map\0".as_ptr() as *const _) };
     let shadow_far_loc = unsafe { gl::GetUniformLocation(shader_program, b"shadow_far\0".as_ptr() as *const _) };
 
-    let earth_texture = load_qoi_texture("textures/earth.qoi")?;
-    let sun_texture = load_qoi_texture("textures/sun.qoi")?;
-    let moon_texture = load_qoi_texture("textures/moon.qoi")?;
-    let mercury_texture = load_qoi_texture("textures/mercury.qoi")?;
-    let venus_texture = load_qoi_texture("textures/venus.qoi")?;
-    let mars_texture = load_qoi_texture("textures/mars.qoi")?;
-    let spacecraft_texture = load_qoi_texture("textures/rocket.qoi")?;
+    let earth_texture = load_texture("textures/earth.qoi", &raw_images)?;
+    let sun_texture = load_texture("textures/sun.qoi", &raw_images)?;
+    let moon_texture = load_texture("textures/moon.qoi", &raw_images)?;
+    let mercury_texture = load_texture("textures/mercury.qoi", &raw_images)?;
+    let venus_texture = load_texture("textures/venus.qoi", &raw_images)?;
+    let mars_texture = load_texture("textures/mars.qoi", &raw_images)?;
+    let spacecraft_texture = load_texture("textures/rocket.qoi", &raw_images)?;
 
-    let skybox_texture = load_skybox_textures(
-        [
-            "textures/space/right.qoi",
-            "textures/space/left.qoi",
-            "textures/space/top.qoi",
-            "textures/space/bottom.qoi",
-            "textures/space/front.qoi",
-            "textures/space/back.qoi",
-        ],
-    )?;
+    let skybox_faces = [
+        "textures/space/right.qoi",
+        "textures/space/left.qoi",
+        "textures/space/top.qoi",
+        "textures/space/bottom.qoi",
+        "textures/space/front.qoi",
+        "textures/space/back.qoi",
+    ];
+
+    let skybox_raws: [&RawImage; 6] = skybox_faces
+        .iter()
+        .map(|path| raw_images.get(*path).expect(&format!("Skybox texture missing: {}", path)))
+        .collect::<Vec<&RawImage>>()
+        .try_into()
+    .expect("Incorrect number of skybox faces");
+
+    let skybox_texture = texture::create_cubemap_from_raws(skybox_raws)?;
 
     let skybox = Skybox::new(skybox_texture)?;
 
