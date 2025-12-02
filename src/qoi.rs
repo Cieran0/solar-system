@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 
@@ -53,19 +52,19 @@ fn read_u32_be(bytes: &[u8], p: &mut usize) -> Result<u32, String> {
     Ok(v)
 }
 
-fn parse_header(bytes: &[u8], desc: &mut QoiDesc) -> Result<usize, String> {
+fn parse_header(bytes: &[u8], p: &mut usize) -> Result<QoiDesc, String> {
     if bytes.len() < QOI_HEADER_SIZE {
         return Err("Too small to be a QOI file".into());
     }
 
-    let mut p = 0;
-    let magic = read_u32_be(bytes, &mut p)?;
-    desc.width = read_u32_be(bytes, &mut p)?;
-    desc.height = read_u32_be(bytes, &mut p)?;
-    desc.channels = *bytes.get(p).ok_or("Missing channels")?;
-    p += 1;
-    desc.colorspace = *bytes.get(p).ok_or("Missing colorspace")?;
-    p += 1;
+    let mut desc = QoiDesc { width: 0, height: 0, channels: 0, colorspace: 0 };
+    let magic = read_u32_be(bytes, p)?;
+    desc.width = read_u32_be(bytes, p)?;
+    desc.height = read_u32_be(bytes, p)?;
+    desc.channels = *bytes.get(*p).ok_or("Missing channels")?;
+    *p += 1;
+    desc.colorspace = *bytes.get(*p).ok_or("Missing colorspace")?;
+    *p += 1;
 
     if magic != QOI_MAGIC {
         return Err("Invalid QOI magic".into());
@@ -83,7 +82,7 @@ fn parse_header(bytes: &[u8], desc: &mut QoiDesc) -> Result<usize, String> {
         return Err("Image too large".into());
     }
 
-    Ok(p)
+    Ok(desc)
 }
 
 fn write_pixel(out: &mut [u8], pos: usize, px: Rgba, channels: usize) {
@@ -147,9 +146,9 @@ fn process_op(
 }
 
 
-fn decode_chunks(bytes: &[u8], mut p: usize, desc: &QoiDesc, channels: usize) -> Result<Vec<u8>, String> {
+fn decode_chunks(bytes: &[u8], mut p: usize, desc: QoiDesc) -> Result<QoiImage, String> {
 
-    let total_px = desc.width as usize * desc.height as usize * channels;
+    let total_px = desc.width as usize * desc.height as usize * desc.channels as usize;
     let mut out = vec![0u8; total_px];
 
     let chunks_end = bytes.len() - QOI_PADDING.len();
@@ -168,50 +167,23 @@ fn decode_chunks(bytes: &[u8], mut p: usize, desc: &QoiDesc, channels: usize) ->
             process_op(b1, bytes, &mut p, &mut px, &mut index, &mut run)?;
         }
 
-        write_pixel(&mut out, pos, px, channels);
-        pos += channels;
+        write_pixel(&mut out, pos, px, desc.channels as usize);
+        pos += desc.channels as usize;
     }
 
-    Ok(out)
+    Ok(QoiImage { desc, data: out })
 }
 
 
-pub fn decode(bytes: &[u8], req_channels: usize, desc: &mut QoiDesc) -> Result<Vec<u8>, String> {
-    let p = parse_header(bytes, desc)?;
+pub fn decode(bytes: &[u8]) -> Result<QoiImage, String> {
+    let mut p = 0;
+    let desc = parse_header(bytes, &mut p)?;
 
-    let channels = if req_channels == 0 {
-        desc.channels as usize
-    } else {
-        req_channels
-    };
-
-    decode_chunks(bytes, p, desc, channels)
+    decode_chunks(bytes, p, desc)
 }
 
 #[derive(Debug)]
-pub struct RawImage {
-    pub data: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
-}
-
-pub fn read_file(filename: &str, desc: &mut QoiDesc, channels: usize) -> Result<Vec<u8>, String> {
-    let mut file = File::open(filename)
-        .map_err(|e| format!("Failed to open {}: {}", filename, e))?;
-
-    let mut data = Vec::new();
-    file.read_to_end(&mut data)
-        .map_err(|e| format!("Failed to read {}: {}", filename, e))?;
-
-    decode(&data, channels, desc)
-}
-
-pub fn read_as_raw(path: &str) -> Result<RawImage, Box<dyn Error>> {
-    let mut desc = QoiDesc { width: 0, height: 0, channels: 0, colorspace: 0 };
-    let data = read_file(path, &mut desc, 4)?;
-    Ok(RawImage {
-        data,
-        width: desc.width,
-        height: desc.height,
-    })
+pub struct QoiImage {
+    pub desc: QoiDesc,
+    pub data: Vec<u8>
 }

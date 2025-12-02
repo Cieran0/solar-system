@@ -11,13 +11,12 @@ mod qoi;
 mod texture;
 
 use std::{
-    collections::HashMap, error::Error, fs::read_to_string, io::{self, Write}, path::Path, rc::Rc, time::Instant
+    collections::HashMap, error::Error, fs::{File, read_to_string}, io::{self, Read, Write}, rc::Rc, sync::mpsc, thread, time::Instant
 };
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
-use walkdir::WalkDir;
 
 use crate::{
-    camera::Camera, input_handler::InputHandler, obj::ObjModel, qoi::RawImage, shaders::create_shader_program, shadow::ShadowRenderer, shape::{Shape, Sphere}, skybox::Skybox, transform_stack::TransformStack, window::Window
+    camera::Camera, input_handler::InputHandler, obj::ObjModel, qoi::QoiImage, shaders::create_shader_program, shadow::ShadowRenderer, shape::{Shape, Sphere}, skybox::Skybox, transform_stack::TransformStack, window::Window
 };
 
 struct Renderable {
@@ -88,19 +87,58 @@ fn print_controls() {
     println!("================");
 }
 
-fn find_qoi_files(root: &str) -> impl Iterator<Item = String> + '_ {
-    WalkDir::new(root)
+fn load_texture(name: &str, images: &HashMap<String, QoiImage>) -> Result<u32, Box<dyn Error>> {
+    let image = images.get(name).expect(&format!("{} texture missing", name));
+    texture::create_texture_from_image(image)
+}
+
+fn load_images(root: &str) -> Result<HashMap<String, QoiImage>, Box<dyn Error>> {
+    use walkdir::WalkDir;
+
+    let paths: Vec<String> = WalkDir::new(root)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
         .map(|e| e.into_path())
         .filter(|p| p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("qoi")))
         .filter_map(|p| p.to_str().map(|s| s.to_owned()))
-}
+        .collect();
 
-fn load_texture(name: &str, raw_images: &HashMap<String, RawImage>) -> Result<u32, Box<dyn Error>> {
-    let raw = raw_images.get(name).expect(&format!("{} texture missing", name));
-    texture::create_texture_from_raw(raw)
+    if paths.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut buffers = Vec::with_capacity(paths.len());
+    for path in &paths {
+        let mut file = File::open(path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        buffers.push((path.clone(), buffer));
+    }
+
+    let (tx, rx) = mpsc::channel();
+    for (path, buf) in buffers {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            match qoi::decode(&buf) {
+                Ok(image) => drop(tx.send(Ok((path, image)))),
+                Err(e) => drop(tx.send(Err(format!("Failed to decode {}: {}", path, e)))),
+            }
+        });
+    }
+    drop(tx);
+
+    let mut images = HashMap::with_capacity(paths.len());
+    for _ in 0..paths.len() {
+        match rx.recv()? {
+            Ok((path, image)) => {
+                images.insert(path, image);
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    Ok(images)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -108,12 +146,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     print!("Loading images...");
     io::stdout().flush()?;
 
-    let raw_images: HashMap<String, RawImage> = find_qoi_files("textures")
-        .map(|path| {
-            let image = qoi::read_as_raw(&path)?;
-            Ok((path, image))
-        })
-    .collect::<Result<HashMap<String, RawImage>, Box<dyn Error>>>()?;
+    let images = load_images("textures")?;
     println!("Done!");
 
     let width = 1280i32;
@@ -144,13 +177,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shadow_map_loc = unsafe { gl::GetUniformLocation(shader_program, b"shadow_map\0".as_ptr() as *const _) };
     let shadow_far_loc = unsafe { gl::GetUniformLocation(shader_program, b"shadow_far\0".as_ptr() as *const _) };
 
-    let earth_texture = load_texture("textures/earth.qoi", &raw_images)?;
-    let sun_texture = load_texture("textures/sun.qoi", &raw_images)?;
-    let moon_texture = load_texture("textures/moon.qoi", &raw_images)?;
-    let mercury_texture = load_texture("textures/mercury.qoi", &raw_images)?;
-    let venus_texture = load_texture("textures/venus.qoi", &raw_images)?;
-    let mars_texture = load_texture("textures/mars.qoi", &raw_images)?;
-    let spacecraft_texture = load_texture("textures/rocket.qoi", &raw_images)?;
+    let earth_texture = load_texture("textures/earth.qoi", &images)?;
+    let sun_texture = load_texture("textures/sun.qoi", &images)?;
+    let moon_texture = load_texture("textures/moon.qoi", &images)?;
+    let mercury_texture = load_texture("textures/mercury.qoi", &images)?;
+    let venus_texture = load_texture("textures/venus.qoi", &images)?;
+    let mars_texture = load_texture("textures/mars.qoi", &images)?;
+    let spacecraft_texture = load_texture("textures/rocket.qoi", &images)?;
 
     let skybox_faces = [
         "textures/space/right.qoi",
@@ -161,14 +194,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         "textures/space/back.qoi",
     ];
 
-    let skybox_raws: [&RawImage; 6] = skybox_faces
+    let skybox_raws: [&QoiImage; 6] = skybox_faces
         .iter()
-        .map(|path| raw_images.get(*path).expect(&format!("Skybox texture missing: {}", path)))
-        .collect::<Vec<&RawImage>>()
+        .map(|path| images.get(*path).expect(&format!("Skybox texture missing: {}", path)))
+        .collect::<Vec<&QoiImage>>()
         .try_into()
     .expect("Incorrect number of skybox faces");
 
-    let skybox_texture = texture::create_cubemap_from_raws(skybox_raws)?;
+    let skybox_texture = texture::create_cubemap_from_images(skybox_raws)?;
 
     let skybox = Skybox::new(skybox_texture)?;
 

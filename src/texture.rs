@@ -1,8 +1,8 @@
 use std::error::Error;
 
-use crate::qoi::RawImage;
+use crate::qoi::{QoiImage};
 
-pub fn create_texture_from_raw(raw: &RawImage) -> Result<u32, Box<dyn Error>> {
+pub fn create_texture_from_image(img: &QoiImage) -> Result<u32, Box<dyn Error>> {
     let mut texture_id = 0;
     unsafe {
         gl::GenTextures(1, &mut texture_id);
@@ -13,19 +13,19 @@ pub fn create_texture_from_raw(raw: &RawImage) -> Result<u32, Box<dyn Error>> {
             gl::TEXTURE_2D,
             0,
             gl::RGBA8 as i32,
-            raw.width as i32,
-            raw.height as i32,
+            img.desc.width as i32,
+            img.desc.height as i32,
             0,
             gl::RGBA,
             gl::UNSIGNED_BYTE,
-            raw.data.as_ptr() as *const _,
+            img.data.as_ptr() as *const _,
         );
         gl::BindTexture(gl::TEXTURE_2D, 0);
     }
     Ok(texture_id)
 }
 
-pub fn create_cubemap_from_raws(raws: [&RawImage; 6]) -> Result<u32, Box<dyn Error>> {
+pub fn create_cubemap_from_images(images: [&QoiImage; 6]) -> Result<u32, Box<dyn Error>> {
     let mut cubemap_id = 0;
     unsafe {
         gl::GenTextures(1, &mut cubemap_id);
@@ -41,13 +41,13 @@ pub fn create_cubemap_from_raws(raws: [&RawImage; 6]) -> Result<u32, Box<dyn Err
         ];
         
         for i in 0..6 {
-            let raw = &raws[i];
+            let raw = &images[i];
             gl::TexImage2D(
                 CUBE_MAP_FACES[i],
                 0,
                 gl::RGBA8 as i32,
-                raw.width as i32,
-                raw.height as i32,
+                raw.desc.width as i32,
+                raw.desc.height as i32,
                 0,
                 gl::RGBA,
                 gl::UNSIGNED_BYTE,
