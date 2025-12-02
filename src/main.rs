@@ -7,26 +7,19 @@ mod shape;
 mod obj;
 mod shadow;
 mod skybox;
+mod qoi;
 
 use std::{
     collections::HashMap,
     error::Error,
-    fs::{self, read_to_string},
+    fs::read_to_string,
     rc::Rc,
     time::Instant,
 };
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
 use crate::{
-    camera::Camera,
-    input_handler::InputHandler,
-    shaders::create_shader_program,
-    shape::{Cube, Shape, Sphere},
-    transform_stack::TransformStack,
-    window::Window,
-    obj::ObjModel,
-    shadow::ShadowRenderer,
-    skybox::Skybox,
+    camera::Camera, input_handler::InputHandler, obj::ObjModel, qoi::QoiDesc, shaders::create_shader_program, shadow::ShadowRenderer, shape::{Shape, Sphere}, skybox::Skybox, transform_stack::TransformStack, window::Window
 };
 
 struct Renderable {
@@ -87,21 +80,10 @@ impl CelestialBody {
     }
 }
 
-fn load_rgba_file_data(path: &str, width: u32, height: u32) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let data = fs::read(path)?;
-    if data.len() != (width * height * 4) as usize {
-        return Err(format!(
-            "Texture file {} has incorrect size. Expected {} bytes, got {} bytes",
-            path,
-            width * height * 4,
-            data.len()
-        )
-        .into());
-    }
-    Ok(data)
-}
+fn load_qoi_texture(path: &str) -> Result<u32, Box<dyn std::error::Error>> {
+    let mut desc = QoiDesc { width: 0, height: 0, channels: 0, colorspace: 0 };
+    let data = qoi::read(path, &mut desc, 4)?;
 
-fn create_2d_texture_from_data(data: &[u8], width: u32, height: u32) -> Result<u32, Box<dyn std::error::Error>> {
     let mut texture_id = 0;
     unsafe {
         gl::GenTextures(1, &mut texture_id);
@@ -112,8 +94,8 @@ fn create_2d_texture_from_data(data: &[u8], width: u32, height: u32) -> Result<u
             gl::TEXTURE_2D,
             0,
             gl::RGBA8 as i32,
-            width as i32,
-            height as i32,
+            desc.width as i32,
+            desc.height as i32,
             0,
             gl::RGBA,
             gl::UNSIGNED_BYTE,
@@ -124,12 +106,7 @@ fn create_2d_texture_from_data(data: &[u8], width: u32, height: u32) -> Result<u
     Ok(texture_id)
 }
 
-fn load_rgba_texture(path: &str, width: u32, height: u32) -> Result<u32, Box<dyn std::error::Error>> {
-    let data = load_rgba_file_data(path, width, height)?;
-    create_2d_texture_from_data(&data, width, height)
-}
-
-fn load_skybox_textures(paths: [&str; 6], width: u32, height: u32) -> Result<u32, Box<dyn std::error::Error>> {
+fn load_skybox_textures(paths: [&str; 6]) -> Result<u32, Box<dyn std::error::Error>> {
     let mut cubemap_id = 0;
     unsafe {
         gl::GenTextures(1, &mut cubemap_id);
@@ -146,13 +123,14 @@ fn load_skybox_textures(paths: [&str; 6], width: u32, height: u32) -> Result<u32
         ];
 
         for (i, path) in paths.iter().enumerate() {
-            let data = load_rgba_file_data(path, width, height)?;
+            let mut desc = QoiDesc { width: 0, height: 0, channels: 0, colorspace: 0 };
+            let data = qoi::read(path, &mut desc, 4)?;
             gl::TexImage2D(
                 CUBE_MAP_FACES[i],
                 0,
                 gl::RGBA8 as i32,
-                width as i32,
-                height as i32,
+                desc.width as i32,
+                desc.height as i32,
                 0,
                 gl::RGBA,
                 gl::UNSIGNED_BYTE,
@@ -216,25 +194,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     let shadow_map_loc = unsafe { gl::GetUniformLocation(shader_program, b"shadow_map\0".as_ptr() as *const _) };
     let shadow_far_loc = unsafe { gl::GetUniformLocation(shader_program, b"shadow_far\0".as_ptr() as *const _) };
 
-    let earth_texture = load_rgba_texture("textures/earth.rgba", 4096, 2048)?;
-    let sun_texture = load_rgba_texture("textures/sun.rgba", 4096, 2048)?;
-    let moon_texture = load_rgba_texture("textures/moon.rgba", 2048, 1024)?;
-    let mercury_texture = load_rgba_texture("textures/mercury.rgba", 2048, 1024)?;
-    let venus_texture = load_rgba_texture("textures/venus.rgba", 2048, 1024)?;
-    let mars_texture = load_rgba_texture("textures/mars.rgba", 2048, 1024)?;
-    let spacecraft_texture = load_rgba_texture("textures/rocket.rgba", 1024, 1024)?;
+    let earth_texture = load_qoi_texture("textures/earth.qoi")?;
+    let sun_texture = load_qoi_texture("textures/sun.qoi")?;
+    let moon_texture = load_qoi_texture("textures/moon.qoi")?;
+    let mercury_texture = load_qoi_texture("textures/mercury.qoi")?;
+    let venus_texture = load_qoi_texture("textures/venus.qoi")?;
+    let mars_texture = load_qoi_texture("textures/mars.qoi")?;
+    let spacecraft_texture = load_qoi_texture("textures/rocket.qoi")?;
 
     let skybox_texture = load_skybox_textures(
         [
-            "textures/space/right.rgba",
-            "textures/space/left.rgba",
-            "textures/space/top.rgba",
-            "textures/space/bottom.rgba",
-            "textures/space/front.rgba",
-            "textures/space/back.rgba",
+            "textures/space/right.qoi",
+            "textures/space/left.qoi",
+            "textures/space/top.qoi",
+            "textures/space/bottom.qoi",
+            "textures/space/front.qoi",
+            "textures/space/back.qoi",
         ],
-        4096,
-        4096,
     )?;
 
     let skybox = Skybox::new(skybox_texture)?;
