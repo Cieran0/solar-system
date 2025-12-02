@@ -1,3 +1,4 @@
+// === src/solar_system.rs ===
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -25,6 +26,8 @@ const MOUSE_SENSITIVITY: f32 = 0.001;
 
 pub struct SolarSystem {
     camera: Camera,
+    camera_lock_target: Option<String>,
+    camera_lock_offset: Vec3, // 👈 new
     projection: Mat4,
     shader_program: u32,
     uniforms: Uniforms,
@@ -96,14 +99,10 @@ impl CelestialBody {
     }
 
     pub fn get_relative_position(&self) -> Vec3 {
-        // Position in the orbital plane before applying inclination
         let x = self.orbit_radius * self.orbit_angle.cos();
         let mut z = self.orbit_radius * self.orbit_angle.sin();
-        
-        // This tilts the orbital plane by the inclination angle
         let y = z * self.inclination.sin();
         z = z * self.inclination.cos();
-        
         Vec3::new(x, y, z)
     }
 }
@@ -197,6 +196,8 @@ impl SolarSystem {
             keys_pressed: HashMap::new(),
             mouse_pressed: false,
             last_mouse_pos: None,
+            camera_lock_target: None,
+            camera_lock_offset: Vec3::ZERO, // 👈 initialized
         })
     }
 
@@ -256,6 +257,7 @@ impl SolarSystem {
             body.update(dt);
         }
 
+        // Spacecraft controls
         let mut rot = Quat::IDENTITY;
         if *self.keys_pressed.get(&Key::Left).unwrap_or(&false) {
             rot = Quat::from_rotation_y(SPACECRAFT_ROT_SPEED * dt) * rot;
@@ -286,62 +288,99 @@ impl SolarSystem {
         }
         self.sim_time_scale = self.sim_time_scale.clamp(0.01, 10.0);
 
-        // Camera view shortcuts
+        // === Camera Locking ===
+        if *self.keys_pressed.get(&Key::Num0).unwrap_or(&false) {
+            self.camera_lock_target = None;
+        }
+
         if *self.keys_pressed.get(&Key::Num1).unwrap_or(&false) {
-            self.camera.position = Vec3::new(0.0, 2.0, 5.0);
+            self.camera_lock_target = Some("Sun".to_string());
+            self.camera_lock_offset = self.camera.position; // sun is at origin
             self.camera.look_at(Vec3::ZERO);
         }
+
         if *self.keys_pressed.get(&Key::Num2).unwrap_or(&false) {
             let earth_pos = self.celestial_bodies["Earth"].get_relative_position();
-            self.camera.position = earth_pos + Vec3::new(0.0, 0.5, 1.0);
+            if self.camera_lock_target != Some("Earth".to_string()) {
+                self.camera_lock_offset = Vec3::new(0.0,0.5,1.0);
+            }
+            self.camera_lock_target = Some("Earth".to_string());
             self.camera.look_at(earth_pos);
         }
+
         if *self.keys_pressed.get(&Key::Num3).unwrap_or(&false) {
             let earth_pos = self.celestial_bodies["Earth"].get_relative_position();
             let moon_pos = earth_pos + self.celestial_bodies["Moon"].get_relative_position();
-            self.camera.position = moon_pos + Vec3::new(0.0, 0.3, 0.6);
+            if self.camera_lock_target != Some("Moon".to_string()) {
+                self.camera_lock_offset = earth_pos + Vec3::new(0.1,0.1,0.1);
+            }
+            self.camera_lock_target = Some("Moon".to_string());
             self.camera.look_at(moon_pos);
         }
+
         if *self.keys_pressed.get(&Key::Num4).unwrap_or(&false) {
             let mars_pos = self.celestial_bodies["Mars"].get_relative_position();
-            self.camera.position = mars_pos + Vec3::new(0.0, 0.3, 0.6);
+            if self.camera_lock_target != Some("Mars".to_string()) {
+                self.camera_lock_offset = Vec3::new(0.0,0.5,1.0);
+            }
+            self.camera_lock_target = Some("Mars".to_string());
             self.camera.look_at(mars_pos);
         }
+
         if *self.keys_pressed.get(&Key::Num5).unwrap_or(&false) {
             let mercury_pos = self.celestial_bodies["Mercury"].get_relative_position();
-            self.camera.position = mercury_pos + Vec3::new(0.0, 1.0, 2.5);
+            if self.camera_lock_target != Some("Mercury".to_string()) {
+                self.camera_lock_offset = Vec3::new(0.0,0.5,1.0);
+            }
+            self.camera_lock_target = Some("Mercury".to_string());
             self.camera.look_at(mercury_pos);
         }
+
         if *self.keys_pressed.get(&Key::Num6).unwrap_or(&false) {
             let venus_pos = self.celestial_bodies["Venus"].get_relative_position();
-            self.camera.position = venus_pos + Vec3::new(0.0, 1.5, 3.5);
+            if self.camera_lock_target != Some("Venus".to_string()) {
+                self.camera_lock_offset = Vec3::new(0.0,0.5,1.0);
+            }
+            self.camera_lock_target = Some("Venus".to_string());
             self.camera.look_at(venus_pos);
         }
 
-        // Camera movement
+        // === Camera Movement ===
         let fwd = self.camera.forward();
         let right = fwd.cross(self.camera.up).normalize();
         let mut vel = Vec3::ZERO;
-        if *self.keys_pressed.get(&Key::W).unwrap_or(&false) {
-            vel += fwd;
-        }
-        if *self.keys_pressed.get(&Key::S).unwrap_or(&false) {
-            vel -= fwd;
-        }
-        if *self.keys_pressed.get(&Key::A).unwrap_or(&false) {
-            vel -= right;
-        }
-        if *self.keys_pressed.get(&Key::D).unwrap_or(&false) {
-            vel += right;
-        }
-        if *self.keys_pressed.get(&Key::Space).unwrap_or(&false) {
-            vel += self.camera.up;
-        }
-        if *self.keys_pressed.get(&Key::LeftShift).unwrap_or(&false) {
-            vel -= self.camera.up;
-        }
-        if vel.length_squared() > 0.0 {
-            self.camera.position += vel.normalize() * MOVE_SPEED * delta_time;
+
+        if *self.keys_pressed.get(&Key::W).unwrap_or(&false) { vel += fwd; }
+        if *self.keys_pressed.get(&Key::S).unwrap_or(&false) { vel -= fwd; }
+        if *self.keys_pressed.get(&Key::A).unwrap_or(&false) { vel -= right; }
+        if *self.keys_pressed.get(&Key::D).unwrap_or(&false) { vel += right; }
+        if *self.keys_pressed.get(&Key::Space).unwrap_or(&false) { vel += self.camera.up; }
+        if *self.keys_pressed.get(&Key::LeftShift).unwrap_or(&false) { vel -= self.camera.up; }
+
+        let movement = if vel.length_squared() > 0.0 {
+            vel.normalize() * MOVE_SPEED * delta_time
+        } else {
+            Vec3::ZERO
+        };
+
+        // Apply movement based on lock state
+        if let Some(target_name) = &self.camera_lock_target {
+            // Update offset when locked
+            self.camera_lock_offset += movement;
+
+            // Recompute camera position from body + offset
+            let body_pos = if target_name == "Sun" {
+                Vec3::ZERO
+            } else {
+                self.celestial_bodies[target_name].get_relative_position()
+            };
+            self.camera.position = body_pos + self.camera_lock_offset;
+
+            // Optional: keep looking at target (comment out to allow free look)
+            // self.camera.look_at(body_pos);
+        } else {
+            // Free movement
+            self.camera.position += movement;
         }
     }
 
