@@ -20,7 +20,7 @@ use crate::{
 };
 
 const MOVE_SPEED: f32 = 2.0;
-const SPACECRAFT_SIZE: f32 = 0.00001;
+const SPACECRAFT_SIZE: f32 = 0.00005;
 const SPACECRAFT_ROT_SPEED: f32 = 1.5;
 const MOUSE_SENSITIVITY: f32 = 0.001;
 
@@ -312,7 +312,7 @@ impl SolarSystem {
             let earth_pos = self.celestial_bodies["Earth"].get_relative_position();
             let moon_pos = earth_pos + self.celestial_bodies["Moon"].get_relative_position();
             if self.camera_lock_target != Some("Moon".to_string()) {
-                self.camera_lock_offset = earth_pos + Vec3::new(0.1,0.1,0.1);
+                self.camera_lock_offset = Vec3::new(0.0,0.5,1.0);
             }
             self.camera_lock_target = Some("Moon".to_string());
             self.camera.look_at(moon_pos);
@@ -371,6 +371,9 @@ impl SolarSystem {
             // Recompute camera position from body + offset
             let body_pos = if target_name == "Sun" {
                 Vec3::ZERO
+            } else if target_name == "Moon" {
+                self.celestial_bodies["Earth"].get_relative_position() +
+                self.celestial_bodies[target_name].get_relative_position()
             } else {
                 self.celestial_bodies[target_name].get_relative_position()
             };
