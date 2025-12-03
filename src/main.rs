@@ -92,10 +92,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut solar_system = SolarSystem::new(window, images)?;
 
     let mut last_time = std::time::Instant::now();
+
+    let mut fps_timer = std::time::Instant::now();
+    let mut frame_count: u32 = 0;
+
     while !solar_system.should_close() {
         let now = std::time::Instant::now();
         let delta = (now - last_time).as_secs_f32();
         last_time = now;
+
+        // FPS counting
+        frame_count += 1;
+        if fps_timer.elapsed().as_secs_f32() >= 1.0 {
+            println!("FPS: {}", frame_count);
+            frame_count = 0;
+            fps_timer = std::time::Instant::now();
+        }
 
         solar_system.handle_events();
         solar_system.update(delta);

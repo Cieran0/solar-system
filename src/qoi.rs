@@ -72,7 +72,7 @@ fn parse_header(bytes: &[u8], p: &mut usize) -> Result<QoiDesc, String> {
     if desc.width == 0 || desc.height == 0 {
         return Err("Invalid QOI dimensions".into());
     }
-    if !matches!(desc.channels, 3 | 4) {
+    if !matches!(desc.channels, 4) {
         return Err("Invalid channel count".into());
     }
     if desc.colorspace > 1 {

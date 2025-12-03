@@ -163,9 +163,9 @@ fn load_obj_from_file(path: &str) -> Result<ObjData, Box<dyn Error>> {
 }
 
 pub struct ObjModel {
-    vao: GLuint,
-    vbo: [GLuint; 5], // pos, colour, normal, texcoord, indices
-    index_count: GLsizei,
+    pub vao: GLuint,
+    pub vbo: [GLuint; 5], // pos, colour, normal, texcoord, indices
+    pub index_count: GLsizei,
 }
 
 impl ObjModel {
@@ -177,7 +177,6 @@ impl ObjModel {
         let normals = data.normals;
         let indices = data.indices;
 
-        // Default white vertex colours (since OBJ has no per-vertex colour)
         let colours: Vec<[f32; 4]> = vec![[1.0, 1.0, 1.0, 1.0]; positions.len()];
 
         unsafe {
@@ -199,7 +198,7 @@ impl ObjModel {
             gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, 0, std::ptr::null());
             gl::EnableVertexAttribArray(0);
 
-            // Colour (location 1) – white fallback
+            // Colour (location 1)
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo[1]);
             gl::BufferData(
                 gl::ARRAY_BUFFER,
@@ -232,7 +231,7 @@ impl ObjModel {
             gl::VertexAttribPointer(3, 2, gl::FLOAT, gl::FALSE, 0, std::ptr::null());
             gl::EnableVertexAttribArray(3);
 
-            // Index buffer (ELEMENT_ARRAY_BUFFER)
+            // Index buffer
             gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, vbo[4]);
             gl::BufferData(
                 gl::ELEMENT_ARRAY_BUFFER,
@@ -248,6 +247,46 @@ impl ObjModel {
                 vbo,
                 index_count: indices.len() as GLsizei,
             })
+        }
+    }
+
+    pub fn setup_instancing(&self, instance_vbo: GLuint) {
+        unsafe {
+            gl::BindVertexArray(self.vao);
+            gl::BindBuffer(gl::ARRAY_BUFFER, instance_vbo);
+
+            const START_LOC: u32 = 4;
+            let vec4_size = std::mem::size_of::<[f32; 4]>() as i32;
+
+            for i in 0..4 {
+                gl::EnableVertexAttribArray(START_LOC + i);
+                gl::VertexAttribPointer(
+                    START_LOC + i,
+                    4,
+                    gl::FLOAT,
+                    gl::FALSE,
+                    4 * vec4_size,
+                    (i * vec4_size as u32) as *const std::ffi::c_void,
+                );
+                gl::VertexAttribDivisor(START_LOC + i, 1);
+            }
+
+            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
+            gl::BindVertexArray(0);
+        }
+    }
+
+    pub fn draw_instanced(&self, instance_count: GLsizei) {
+        unsafe {
+            gl::BindVertexArray(self.vao);
+            gl::DrawElementsInstanced(
+                gl::TRIANGLES,
+                self.index_count,
+                gl::UNSIGNED_INT,
+                std::ptr::null(),
+                instance_count,
+            );
+            gl::BindVertexArray(0);
         }
     }
 }
