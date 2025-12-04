@@ -10,20 +10,37 @@ mod qoi;
 mod texture;
 mod uniforms;
 mod solar_system;
+mod asteroid;
 
 use std::{
     collections::HashMap,
     error::Error,
-    io::{self, Read, Write},
+    io::{self, Read, Write}, path::Path,
 };
 
 use crate::solar_system::SolarSystem;
 use crate::window::Window;
+use clap::Parser;
+
+#[derive(Parser)]
+struct Args {
+    #[arg(short = 'a')]
+    asteroid_count: Option<usize>,
+}
+
+pub fn os_str(dir: &str, file: &str) -> String {
+    Path::new(dir).join(file).to_str().unwrap().to_string()
+}
+
+pub fn os_str_sub(dir: &str, sub: &str, file: &str) -> String {
+    Path::new(dir).join(sub).join(file).to_str().unwrap().to_string()
+}
 
 fn print_controls() {
     println!("=== Controls ===");
     println!("Camera movement: W/A/S/D + Space (up) / LeftShift (down)");
-    println!("Camera views (Hold): 1 = Sun, 2 = Earth, 3 = Moon, 4 = Mars, 5 = Mercury, 6 = Venus");
+    println!("Camera Follow Lock: 1 = Sun, 2 = Earth, 3 = Moon, 4 = Mars, 5 = Mercury, 6 = Venus");
+    println!("Camera Unlock: 0");
     println!("Simulation speed: '=' = faster, '-' = slower");
     println!("Spacecraft rotation: Arrow keys");
     println!("Spacecraft distance from Moon: PageUp / PageDown");
@@ -78,6 +95,12 @@ fn load_images(root: &str) -> Result<HashMap<String, crate::qoi::QoiImage>, Box<
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+
+    const DEFAULT_ASTEROID_COUNT: usize = 10_000;
+    let asteroid_count = args.asteroid_count.unwrap_or(DEFAULT_ASTEROID_COUNT);
+    println!("Running with {} asteroids, set with -a [asteroid count]", asteroid_count);
+
     print_controls();
     print!("Loading images...");
     io::stdout().flush()?;
@@ -89,7 +112,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let height = 720u32;
     let window = Window::new(width, height, "Solar System")?;
 
-    let mut solar_system = SolarSystem::new(window, images)?;
+
+
+    let mut solar_system = SolarSystem::new(window, images, asteroid_count)?;
 
     let mut last_time = std::time::Instant::now();
 

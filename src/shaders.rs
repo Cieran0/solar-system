@@ -54,3 +54,31 @@ pub fn create_shader_program(vertex_src: &str, fragment_src: &str) -> Result<u32
     }
     Ok(program)
 }
+
+pub fn create_compute_program(source: &str) -> Result<u32, String> {
+    let compute_shader = compile_shader(source, gl::COMPUTE_SHADER)?;
+
+    let program = unsafe { gl::CreateProgram() };
+    unsafe {
+        gl::AttachShader(program, compute_shader);
+        gl::LinkProgram(program);
+
+        let mut success: i32 = 0;
+        gl::GetProgramiv(program, gl::LINK_STATUS, &mut success);
+        if success != i32::from(gl::TRUE) {
+            let mut len: i32 = 0;
+            gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &mut len);
+            let mut error = vec![0u8; len as usize];
+            gl::GetProgramInfoLog(program, len, std::ptr::null_mut(), error.as_mut_ptr() as *mut i8);
+            let error = std::ffi::CStr::from_ptr(error.as_ptr() as *const i8)
+                .to_str()
+                .unwrap()
+                .to_string();
+            return Err(format!("Compute shader linking failed: {}", error));
+        }
+
+        gl::DeleteShader(compute_shader);
+    }
+
+    Ok(program)
+}
