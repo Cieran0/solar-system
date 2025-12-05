@@ -9,7 +9,7 @@ out vec3 f_view_position;
 out vec3 f_light_direction;
 out vec3 f_normal;
 out vec2 f_tex_coord;
-out vec3 FragPos;
+out vec3 f_frag_pos;
 uniform mat4 model, view, projection;
 uniform mat3 normal_matrix;
 uniform vec4 light_pos;
@@ -28,7 +28,7 @@ void main() {
     f_light_direction = L;
     f_normal = N;
     f_tex_coord = tex_coord;
-    FragPos = world_pos.xyz;
+    f_frag_pos = world_pos.xyz;
 
     gl_Position = projection * view_pos;
 }

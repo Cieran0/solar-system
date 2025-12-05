@@ -160,6 +160,7 @@ impl Scene {
                     texture_id: self.spacecraft_texture,
                 });
                 ts.pop(); // spacecraft
+                ts.pop(); // spacecraft
                 ts.pop(); // moon
             }
             ts.pop(); // planet

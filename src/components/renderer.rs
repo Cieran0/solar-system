@@ -1,7 +1,5 @@
-use std::rc::Rc;
 use glam::{Mat4, Vec3, Vec4};
 use crate::{
-    assets::shape::Shape,
     uniforms::Uniforms,
     rendering::{
         asteroid::AsteroidField,

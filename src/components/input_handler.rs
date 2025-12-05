@@ -6,12 +6,12 @@ use crate::rendering::window::Window;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CameraLockTarget {
     None,
-    Sun,
     Earth,
     Moon,
     Mars,
     Mercury,
     Venus,
+    Clear,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -19,7 +19,6 @@ pub struct CameraInputState {
     pub movement: Vec3,
     pub rotation: Vec2,
     pub lock_target: CameraLockTarget,
-    pub lock_offset_delta: Vec3,
     pub reset_camera: bool,
 }
 
@@ -38,7 +37,6 @@ pub struct InputHandler {
     mouse_buttons: HashMap<MouseButton, bool>,
     cursor_position: Option<(f64, f64)>,
     last_cursor_position: Option<(f64, f64)>,
-    cursor_captured: bool,
     last_frame_keys: HashMap<Key, bool>,
     framebuffer_resized: Option<(i32, i32)>,
 }
@@ -57,7 +55,6 @@ impl InputHandler {
             mouse_buttons: HashMap::new(),
             cursor_position: None,
             last_cursor_position: None,
-            cursor_captured: false,
             last_frame_keys: HashMap::new(),
             framebuffer_resized: None,
         }
@@ -135,11 +132,10 @@ impl InputHandler {
         let mut movement = Vec3::ZERO;
         let mut rotation = Vec2::ZERO;
         let mut lock_target = CameraLockTarget::None;
-        let mut lock_offset_delta = Vec3::ZERO;
         let mut reset_camera = false;
         
         // Handle camera lock targets (pressed this frame)
-        if self.key_pressed_this_frame(Key::Num0) { lock_target = CameraLockTarget::None; }
+        if self.key_pressed_this_frame(Key::Num0) { lock_target = CameraLockTarget::Clear; }
         if self.key_pressed_this_frame(Key::Num1) { reset_camera = true; }
         if self.key_pressed_this_frame(Key::Num2) { lock_target = CameraLockTarget::Earth; }
         if self.key_pressed_this_frame(Key::Num3) { lock_target = CameraLockTarget::Moon; }
@@ -163,22 +159,10 @@ impl InputHandler {
             }
         }
         
-        // Handle offset adjustment when locked
-        if lock_target != CameraLockTarget::None {
-            if self.is_key_down(Key::W) { lock_offset_delta.z += move_speed; }
-            if self.is_key_down(Key::S) { lock_offset_delta.z -= move_speed; }
-            if self.is_key_down(Key::A) { lock_offset_delta.x -= move_speed; }
-            if self.is_key_down(Key::D) { lock_offset_delta.x += move_speed; }
-            if self.is_key_down(Key::Space) { lock_offset_delta.y += move_speed; }
-            if self.is_key_down(Key::LeftShift) { lock_offset_delta.y -= move_speed; }
-            movement = Vec3::ZERO; // No regular movement when locked
-        }
-        
         CameraInputState {
             movement,
             rotation,
             lock_target,
-            lock_offset_delta,
             reset_camera,
         }
     }

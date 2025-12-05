@@ -5,8 +5,9 @@ in vec3 f_view_position;
 in vec3 f_light_direction;
 in vec3 f_normal;
 in vec2 f_tex_coord;
-in vec3 FragPos;
-out vec4 outputColor;
+in vec3 f_frag_pos;
+
+out vec4 output_colour;
 
 uniform uint emit_mode;
 uniform sampler2D base_texture;
@@ -20,7 +21,7 @@ vec3 specular_albedo = vec3(1.0, 0.8, 0.6);
 int shininess = 8;
 
 float calculate_shadow() {
-    vec3 light_to_frag = FragPos - light_pos_world;
+    vec3 light_to_frag = f_frag_pos - light_pos_world;
     float dist = length(light_to_frag);
     if (dist > shadow_far)
         return 0.0;
@@ -64,5 +65,5 @@ void main() {
     vec3 final = lit + emissive;
 
     float alpha = use_texture ? texture(base_texture, f_tex_coord).a : f_base_colour.a;
-    outputColor = vec4(final, alpha);
+    output_colour = vec4(final, alpha);
 }

@@ -10,7 +10,7 @@ uniform mat4 projection;
 uniform mat3 normal_matrix;
 uniform vec3 light_pos_world;
 
-out vec3 FragPos;
+out vec3 f_frag_pos;
 out vec3 Normal;
 out vec2 TexCoord;
 out vec4 FragColor;
@@ -26,7 +26,7 @@ float calculateVisibility(float distance, float far) {
 
 void main() {
     vec4 worldPos = instanceModel * vec4(aPos, 1.0);
-    FragPos = worldPos.xyz;
+    f_frag_pos = worldPos.xyz;
     Normal = normalize(normal_matrix * aNormal);
     TexCoord = aTexCoord;
     FragColor = aColor;

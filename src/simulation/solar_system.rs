@@ -2,30 +2,23 @@ use std::{collections::HashMap, rc::Rc};
 use glam::{Mat4, Vec3};
 use crate::{
     assets::{
-        obj::ObjModel,
-        shape::{Shape, Sphere},
-        texture,
-        qoi::QoiImage,
-        shaders::{create_compute_program, create_shader_program},
-    },
-    components::{
-        camera_controller::CameraController,
-        input_handler::InputHandler,
+        obj::ObjModel, qoi::QoiImage, shaders::{create_compute_program, create_shader_program}, shape::{Shape, Sphere}, texture
+    }, components::{
+        camera::Camera,
+        input_handler::{CameraLockTarget, InputHandler},
         renderer::Renderer,
         scene::Scene,
-    },
-    rendering::{
+    }, os_str, os_str_sub, rendering::{
         asteroid::AsteroidField,
         shadow::ShadowRenderer,
         skybox::Skybox,
         window::Window,
-    },
-    os_str, os_str_sub,
+    }
 };
 
 pub struct SolarSystem {
     input_handler: InputHandler,
-    camera_controller: CameraController,
+    camera: Camera,
     scene: Scene,
     renderer: Renderer,
     sim_time_scale: f32,
@@ -115,6 +108,7 @@ impl SolarSystem {
         // Asteroid field
         let compute_shader_source = std::fs::read_to_string(os_str_sub("shaders", "asteroid", "asteroid.glsl"))?;
         let compute_shader = create_compute_program(&compute_shader_source)?;
+
         let asteroid_field = AsteroidField::new(
             asteroid_count,
             &os_str("models", "asteroid.obj"),
@@ -133,11 +127,11 @@ impl SolarSystem {
             width,
             height,
         );
-        let camera_controller = CameraController::new(Vec3::new(0.0, 2.0, 5.0));
+        let camera = Camera::new(Vec3::new(0.0, 2.0, 5.0));
 
         Ok(Self {
             input_handler,
-            camera_controller,
+            camera,
             scene,
             renderer,
             sim_time_scale: 1.0,
@@ -148,7 +142,7 @@ impl SolarSystem {
         let (camera_input, sim_input) = self.input_handler.process_input();
 
         // Update camera with processed input
-        self.camera_controller.process_input(&camera_input);
+        self.camera.process_input(&camera_input);
 
         if let Some((width, height)) = sim_input.framebuffer_resized {
             self.renderer.resize(width, height);
@@ -180,24 +174,24 @@ impl SolarSystem {
         self.renderer.update_asteroids(dt);
 
         // Update camera position if locked
-        if self.camera_controller.lock_target != crate::components::input_handler::CameraLockTarget::None {
+        if self.camera.lock_target != CameraLockTarget::None {
             let target_pos = self.scene.get_body_position(
-                match self.camera_controller.lock_target {
-                    crate::components::input_handler::CameraLockTarget::Sun => "Sun",
-                    crate::components::input_handler::CameraLockTarget::Earth => "Earth",
-                    crate::components::input_handler::CameraLockTarget::Moon => "Moon",
-                    crate::components::input_handler::CameraLockTarget::Mars => "Mars",
-                    crate::components::input_handler::CameraLockTarget::Mercury => "Mercury",
-                    crate::components::input_handler::CameraLockTarget::Venus => "Venus",
-                    crate::components::input_handler::CameraLockTarget::None => unreachable!(),
+                match self.camera.lock_target {
+                    CameraLockTarget::Earth => "Earth",
+                    CameraLockTarget::Moon => "Moon",
+                    CameraLockTarget::Mars => "Mars",
+                    CameraLockTarget::Mercury => "Mercury",
+                    CameraLockTarget::Venus => "Venus",
+                    CameraLockTarget::None => "Sun",
+                    CameraLockTarget::Clear => "Sun",
                 }
             );
-            self.camera_controller.update_locked_camera(target_pos);
+            self.camera.update_locked_camera(target_pos);
         }
     }
 
     pub fn draw(&mut self) {
-        let view = self.camera_controller.view_matrix();
+        let view = self.camera.view_matrix();
         let renderables = self.scene.get_renderables();
         self.renderer.draw(&view, &renderables);
     }

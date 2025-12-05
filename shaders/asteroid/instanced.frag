@@ -1,5 +1,5 @@
 #version 330 core
-in vec3 FragPos;
+in vec3 f_frag_pos;
 in vec3 Normal;
 in vec2 TexCoord;
 in vec4 FragColor;
@@ -22,7 +22,7 @@ void main() {
     
     // Simple diffuse lighting
     vec3 norm = normalize(Normal);
-    vec3 lightDir = normalize(light_pos_world - FragPos);
+    vec3 lightDir = normalize(light_pos_world - f_frag_pos);
     float diff = max(dot(norm, lightDir), 0.0);
     vec3 diffuse = diff * color;
     
