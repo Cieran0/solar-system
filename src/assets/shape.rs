@@ -12,7 +12,7 @@ pub trait Shape {
 // Represents a sphere geometry with vertex buffer objects for position, color, normal, and texture coordinates.
 pub struct Sphere {
     vao: GLuint,
-    vbo: [GLuint; 4], //  NOW 4: pos, colour, normal, texcoord
+    vbo: [GLuint; 4],
     vertex_count: i32,
 }
 
@@ -43,7 +43,6 @@ impl Sphere {
             gl::VertexAttribPointer(2, 3, gl::FLOAT, gl::FALSE, 0, std::ptr::null());
             gl::EnableVertexAttribArray(2);
 
-            // TEXCOORDS â€“ NEW
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo[3]);
             gl::BufferData(gl::ARRAY_BUFFER, (tex_coords.len() * std::mem::size_of::<Vec2>()) as isize, tex_coords.as_ptr() as *const _, gl::STATIC_DRAW);
             gl::VertexAttribPointer(3, 2, gl::FLOAT, gl::FALSE, 0, std::ptr::null());
@@ -122,7 +121,7 @@ impl Drop for Sphere {
     fn drop(&mut self) {
         unsafe {
             gl::DeleteVertexArrays(1, &self.vao);
-            gl::DeleteBuffers(4, self.vbo.as_ptr()); //  4 now
+            gl::DeleteBuffers(4, self.vbo.as_ptr());
         }
     }
 }

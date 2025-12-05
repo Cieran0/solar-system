@@ -22,6 +22,7 @@ impl ShadowRenderer {
             let mut depth_cubemap: GLuint = 0;
             gl::GenTextures(1, &mut depth_cubemap);
             gl::BindTexture(gl::TEXTURE_CUBE_MAP, depth_cubemap);
+
             for i in 0..6 {
                 gl::TexImage2D(
                     gl::TEXTURE_CUBE_MAP_POSITIVE_X + i as GLenum,
@@ -35,12 +36,14 @@ impl ShadowRenderer {
                     ptr::null(),
                 );
             }
+
             // filtering/wrap
             gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
             gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
             gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
             gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
             gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as i32);
+
             // Use hardware compare mode
             gl::TexParameteri(
                 gl::TEXTURE_CUBE_MAP,
@@ -52,15 +55,18 @@ impl ShadowRenderer {
                 gl::TEXTURE_COMPARE_FUNC,
                 gl::LEQUAL as i32,
             );
+
             // Unbind texture for now
             gl::BindTexture(gl::TEXTURE_CUBE_MAP, 0);
             let mut depth_fbo: GLuint = 0;
             gl::GenFramebuffers(1, &mut depth_fbo);
             gl::BindFramebuffer(gl::FRAMEBUFFER, depth_fbo);
+
             // Attach the cubemap (driver will accept layered rendering once we set gl_Layer in the geometry shader)
             gl::FramebufferTexture(gl::FRAMEBUFFER, gl::DEPTH_ATTACHMENT, depth_cubemap, 0);
             gl::DrawBuffer(gl::NONE);
             gl::ReadBuffer(gl::NONE);
+
             // Check completeness
             let status = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
             if status != gl::FRAMEBUFFER_COMPLETE {
@@ -68,22 +74,26 @@ impl ShadowRenderer {
                 gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
                 return Err(format!("Depth FBO incomplete: 0x{:X}", status).into());
             }
+
             // Unbind FBO
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
             let vert_src = fs::read_to_string(os_str_sub("shaders", "shadow","shadow_cubemap.vert"))?;
             let geom_src = fs::read_to_string(os_str_sub("shaders", "shadow","shadow_cubemap.geom"))?;
             let frag_src = fs::read_to_string(os_str_sub("shaders", "shadow","shadow_cubemap.frag"))?;
+            
             let vert_shader =
                 shaders::compile_shader(&vert_src, gl::VERTEX_SHADER)?;
             let geom_shader =
                 shaders::compile_shader(&geom_src, gl::GEOMETRY_SHADER)?;
             let frag_shader =
                 shaders::compile_shader(&frag_src, gl::FRAGMENT_SHADER)?;
+
             let shader = gl::CreateProgram();
             gl::AttachShader(shader, vert_shader);
             gl::AttachShader(shader, geom_shader);
             gl::AttachShader(shader, frag_shader);
             gl::LinkProgram(shader);
+
             // Check link status
             let mut success: i32 = 0;
             gl::GetProgramiv(shader, gl::LINK_STATUS, &mut success);
@@ -100,6 +110,7 @@ impl ShadowRenderer {
                 let msg = String::from_utf8_lossy(&buf).into_owned();
                 return Err(format!("Shadow shader linking failed: {}", msg).into());
             }
+
             // Clean up shaders
             gl::DeleteShader(vert_shader);
             gl::DeleteShader(geom_shader);
