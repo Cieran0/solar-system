@@ -3,7 +3,7 @@ use std::fs;
 use gl::types::GLuint;
 use glam::{Mat3, Mat4};
 
-use crate::shaders::create_shader_program;
+use crate::{os_str_sub, shaders::create_shader_program};
 
 pub struct Skybox {
     vao: GLuint,
@@ -61,8 +61,8 @@ impl Skybox {
         ];
         
         // Load skybox shaders
-        let vertex_src = fs::read_to_string("shaders/skybox.vert")?;
-        let fragment_src = fs::read_to_string("shaders/skybox.frag")?;
+        let vertex_src = fs::read_to_string(os_str_sub("shaders", "skybox", "skybox.vert"))?;
+        let fragment_src = fs::read_to_string(os_str_sub("shaders", "skybox", "skybox.frag"))?;
         let shader_program = create_shader_program(&vertex_src, &fragment_src)?;
         
         unsafe {

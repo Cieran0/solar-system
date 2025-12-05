@@ -1,7 +1,7 @@
 use std::{fs, ptr};
 use gl::types::{GLenum, GLuint};
 use glam::{Mat4, Vec3};
-use crate::solar_system::Renderable;
+use crate::{os_str_sub, solar_system::Renderable};
 
 pub struct ShadowRenderer {
     pub depth_cubemap: GLuint,
@@ -77,9 +77,9 @@ impl ShadowRenderer {
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 
             // --- Load & compile depth-pass shaders ---
-            let vert_src = fs::read_to_string("shaders/shadow_cubemap.vert")?;
-            let geom_src = fs::read_to_string("shaders/shadow_cubemap.geom")?;
-            let frag_src = fs::read_to_string("shaders/shadow_cubemap.frag")?;
+            let vert_src = fs::read_to_string(os_str_sub("shaders", "shadow","shadow_cubemap.vert"))?;
+            let geom_src = fs::read_to_string(os_str_sub("shaders", "shadow","shadow_cubemap.geom"))?;
+            let frag_src = fs::read_to_string(os_str_sub("shaders", "shadow","shadow_cubemap.frag"))?;
 
             let vert_shader =
                 crate::shaders::compile_shader(&vert_src, gl::VERTEX_SHADER)?;

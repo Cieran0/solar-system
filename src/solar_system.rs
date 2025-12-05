@@ -105,14 +105,14 @@ impl SolarSystem {
         }
         
         // Original shader
-        let vertex_src = std::fs::read_to_string("shaders/render.vert")?;
-        let fragment_src = std::fs::read_to_string("shaders/render.frag")?;
+        let vertex_src = std::fs::read_to_string(os_str_sub("shaders","render","render.vert"))?;
+        let fragment_src = std::fs::read_to_string(os_str_sub("shaders","render","render.frag"))?;
         let shader_program = create_shader_program(&vertex_src, &fragment_src)?;
         let uniforms = Uniforms::new(shader_program);
         
         // Instanced shader for asteroids
-        let instanced_vert = read_to_string(os_str("shaders", "instanced.vert"))?;
-        let instanced_frag = read_to_string(os_str("shaders", "instanced.frag"))?;
+        let instanced_vert = read_to_string(os_str_sub("shaders", "asteroid", "instanced.vert"))?;
+        let instanced_frag = read_to_string(os_str_sub("shaders", "asteroid", "instanced.frag"))?;
         let instanced_shader_program = create_shader_program(&instanced_vert, &instanced_frag)?;
         
         let projection = Mat4::perspective_rh(
@@ -122,22 +122,22 @@ impl SolarSystem {
             100.0,
         );
         
-        let earth_texture = load_texture(&os_str("textures", "earth.qoi"), &images)?;
-        let sun_texture = load_texture(&os_str("textures", "sun.qoi"), &images)?;
-        let moon_texture = load_texture(&os_str("textures", "moon.qoi"), &images)?;
-        let mercury_texture = load_texture(&os_str("textures", "mercury.qoi"), &images)?;
-        let venus_texture = load_texture(&os_str("textures", "venus.qoi"), &images)?;
-        let mars_texture = load_texture(&os_str("textures", "mars.qoi"), &images)?;
-        let spacecraft_texture = load_texture(&os_str("textures", "rocket.qoi"), &images)?;
-        let asteroid_texture = load_texture(&os_str("textures", "asteroid.qoi"), &images)?;
+        let earth_texture = load_texture(&os_str_sub("textures", "planets", "earth.qoi"), &images)?;
+        let sun_texture = load_texture(&os_str_sub("textures", "other_bodies", "sun.qoi"), &images)?;
+        let moon_texture = load_texture(&os_str_sub("textures", "other_bodies", "moon.qoi"), &images)?;
+        let mercury_texture = load_texture(&os_str_sub("textures", "planets", "mercury.qoi"), &images)?;
+        let venus_texture = load_texture(&os_str_sub("textures", "planets", "venus.qoi"), &images)?;
+        let mars_texture = load_texture(&os_str_sub("textures", "planets", "mars.qoi"), &images)?;
+        let spacecraft_texture = load_texture(&os_str_sub("textures", "rocket", "rocket.qoi"), &images)?;
+        let asteroid_texture = load_texture(&os_str_sub("textures", "other_bodies", "asteroid.qoi"), &images)?;
         
         let skybox_faces = [
-            &os_str_sub("textures", "space", "right.qoi"),
-            &os_str_sub("textures", "space", "left.qoi"),
-            &os_str_sub("textures", "space", "top.qoi"),
-            &os_str_sub("textures", "space", "bottom.qoi"),
-            &os_str_sub("textures", "space", "front.qoi"),
-            &os_str_sub("textures", "space", "back.qoi"),
+            &os_str_sub("textures", "background", "right.qoi"),
+            &os_str_sub("textures", "background", "left.qoi"),
+            &os_str_sub("textures", "background", "top.qoi"),
+            &os_str_sub("textures", "background", "bottom.qoi"),
+            &os_str_sub("textures", "background", "front.qoi"),
+            &os_str_sub("textures", "background", "back.qoi"),
         ];
         
         let skybox_raws: [&QoiImage; 6] = skybox_faces
@@ -172,7 +172,7 @@ impl SolarSystem {
             ("Mars".to_string(), CelestialBody::new(0.12, 10.0, 0.3, 1.8, -7_f32.to_radians(), mars_texture, Rc::clone(&mars), 0)),
         ].into_iter().collect();
         
-        let compute_shader_source = read_to_string(os_str_sub("shaders", "compute", "asteroid.glsl"))?;
+        let compute_shader_source = read_to_string(os_str_sub("shaders", "asteroid", "asteroid.glsl"))?;
         let compute_shader = create_compute_program(&compute_shader_source)?;
         // Initialize asteroid field
         let asteroid_field = AsteroidField::new(
