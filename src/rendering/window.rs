@@ -48,10 +48,6 @@ impl Window {
         self.glfw.poll_events();
     }
 
-    pub fn get_cursor_pos(&self) -> (f64, f64) {
-        self.window.get_cursor_pos()
-    }
-
     pub fn swap_buffers(&mut self) {
         self.window.swap_buffers();
     }

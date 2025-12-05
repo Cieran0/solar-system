@@ -4,7 +4,7 @@ use gl::types::{GLsizei, GLuint};
 use glam::{Mat4, Vec3};
 use rand::Rng;
 
-use crate::{obj::ObjModel, uniforms::Uniforms};
+use crate::{assets::obj::ObjModel, uniforms::Uniforms};
 
 #[repr(C)]
 pub struct AsteroidStatic {

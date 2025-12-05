@@ -1,6 +1,3 @@
-use std::fs::File;
-use std::io::Read;
-
 #[derive(Copy, Clone, Debug)]
 pub struct QoiDesc {
     pub width: u32,

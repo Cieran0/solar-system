@@ -1,7 +1,7 @@
 use std::{fs, ptr};
 use gl::types::{GLenum, GLuint};
 use glam::{Mat4, Vec3};
-use crate::{os_str_sub, solar_system::Renderable};
+use crate::{assets::shaders, os_str_sub, simulation::solar_system::Renderable};
 
 pub struct ShadowRenderer {
     pub depth_cubemap: GLuint,
@@ -82,11 +82,11 @@ impl ShadowRenderer {
             let frag_src = fs::read_to_string(os_str_sub("shaders", "shadow","shadow_cubemap.frag"))?;
 
             let vert_shader =
-                crate::shaders::compile_shader(&vert_src, gl::VERTEX_SHADER)?;
+                shaders::compile_shader(&vert_src, gl::VERTEX_SHADER)?;
             let geom_shader =
-                crate::shaders::compile_shader(&geom_src, gl::GEOMETRY_SHADER)?;
+                shaders::compile_shader(&geom_src, gl::GEOMETRY_SHADER)?;
             let frag_shader =
-                crate::shaders::compile_shader(&frag_src, gl::FRAGMENT_SHADER)?;
+                shaders::compile_shader(&frag_src, gl::FRAGMENT_SHADER)?;
 
             let shader = gl::CreateProgram();
             gl::AttachShader(shader, vert_shader);
@@ -215,8 +215,10 @@ impl ShadowRenderer {
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
         }
     }
+}
 
-    pub fn destroy(&self) {
+impl Drop for ShadowRenderer {
+    fn drop(&mut self) {
         unsafe {
             gl::DeleteFramebuffers(1, &self.depth_fbo);
             gl::DeleteTextures(1, &self.depth_cubemap);
