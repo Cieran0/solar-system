@@ -1,3 +1,6 @@
+﻿// Name: Cieran O'Neill
+// Date: 05/12/2025
+// CS51012 Assignment Part 2
 use glfw::{Context, Glfw, GlfwReceiver, OpenGlProfileHint, PWindow, WindowEvent};
 use std::error::Error;
 

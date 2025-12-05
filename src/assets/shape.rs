@@ -1,3 +1,6 @@
+﻿// Name: Cieran O'Neill
+// Date: 05/12/2025
+// CS51012 Assignment Part 2
 use glam::{Vec2, Vec3, Vec4};
 use gl::types::GLuint;
 
@@ -37,7 +40,7 @@ impl Sphere {
             gl::VertexAttribPointer(2, 3, gl::FLOAT, gl::FALSE, 0, std::ptr::null());
             gl::EnableVertexAttribArray(2);
 
-            // TEXCOORDS – NEW
+            // TEXCOORDS â€“ NEW
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo[3]);
             gl::BufferData(gl::ARRAY_BUFFER, (tex_coords.len() * std::mem::size_of::<Vec2>()) as isize, tex_coords.as_ptr() as *const _, gl::STATIC_DRAW);
             gl::VertexAttribPointer(3, 2, gl::FLOAT, gl::FALSE, 0, std::ptr::null());

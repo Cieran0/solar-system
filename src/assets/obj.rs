@@ -1,3 +1,6 @@
+﻿// Name: Cieran O'Neill
+// Date: 05/12/2025
+// CS51012 Assignment Part 2
 use std::{collections::HashMap, error::Error, fs::read_to_string};
 use gl::types::{GLuint, GLsizei};
 use crate::assets::shape::Shape;

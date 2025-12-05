@@ -1,3 +1,6 @@
+﻿// Name: Cieran O'Neill
+// Date: 05/12/2025
+// CS51012 Assignment Part 2
 use glam::{Mat4, Vec3};
 use crate::components::input_handler::{CameraInputState, CameraLockTarget};
 

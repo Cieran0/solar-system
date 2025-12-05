@@ -1,3 +1,6 @@
+﻿// Name: Cieran O'Neill
+// Date: 05/12/2025
+// CS51012 Assignment Part 2
 use std::ffi::CString;
 use glam::{Mat3, Mat4, Vec3, Vec4};
 

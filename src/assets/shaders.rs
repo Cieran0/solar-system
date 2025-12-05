@@ -1,3 +1,6 @@
+﻿// Name: Cieran O'Neill
+// Date: 05/12/2025
+// CS51012 Assignment Part 2
 use std::ffi::{CStr, CString};
 
 // Compile shader from a string
@@ -82,3 +85,4 @@ pub fn create_compute_program(source: &str) -> Result<u32, String> {
 
     Ok(program)
 }
+
