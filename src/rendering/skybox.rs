@@ -8,6 +8,7 @@ use glam::{Mat3, Mat4};
 
 use crate::{os_str_sub, assets::shaders::create_shader_program};
 
+// Renders a skybox using a cube geometry and a cubemap texture for background environment.
 pub struct Skybox {
     vao: GLuint,
     vbo: GLuint,
@@ -16,6 +17,7 @@ pub struct Skybox {
 }
 
 impl Skybox {
+    // Creates a skybox by loading shaders, generating a cube mesh, and binding the provided cubemap texture.
     pub fn new(cubemap_texture: u32) -> Result<Self, Box<dyn std::error::Error>> {
         // Skybox vertices (a simple cube centered at origin)
         let vertices: [f32; 108] = [
@@ -98,6 +100,7 @@ impl Skybox {
         }
     }
     
+    // Renders the skybox with proper depth handling and a view matrix stripped of translation.
     pub fn draw(&self, view: &Mat4, projection: &Mat4) {
         unsafe {
             // Save current OpenGL state
@@ -108,8 +111,9 @@ impl Skybox {
             gl::GetIntegerv(gl::DEPTH_FUNC, &mut current_depth_func);
             
             // Proper setup for skybox rendering
-            gl::DepthFunc(gl::LEQUAL); // Critical for skybox depth testing
-            gl::DepthMask(gl::FALSE);  // Don't write to depth buffer
+            // Skybox depth buffer settings from learnopengl.com (as is)
+            gl::DepthFunc(gl::LEQUAL); 
+            gl::DepthMask(gl::FALSE);
             gl::UseProgram(self.shader_program);
             
             // Set uniforms
@@ -147,6 +151,7 @@ impl Skybox {
     }
 }
 
+// Cleans up OpenGL resources used by the skybox when it is dropped.
 impl Drop for Skybox {
     fn drop(&mut self) {
         unsafe {

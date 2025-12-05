@@ -6,6 +6,7 @@ use glfw::{Action, Key, MouseButton, WindowEvent};
 use glam::{Vec2, Vec3};
 use crate::rendering::window::Window;
 
+// Represents possible celestial bodies or states the camera can lock onto.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CameraLockTarget {
     None,
@@ -17,6 +18,7 @@ pub enum CameraLockTarget {
     Clear,
 }
 
+// Holds processed input state relevant to camera control.
 #[derive(Debug, Clone, Copy)]
 pub struct CameraInputState {
     pub movement: Vec3,
@@ -25,15 +27,16 @@ pub struct CameraInputState {
     pub reset_camera: bool,
 }
 
+// Holds processed input state relevant to simulation controls.
 #[derive(Debug, Clone, Copy)]
 pub struct SimulationInputState {
     pub time_scale_multiplier: f32,
     pub spacecraft_rotation: Vec2,
     pub spacecraft_distance_delta: f32,
-    pub should_close: bool,
     pub framebuffer_resized: Option<(i32, i32)>,
 }
 
+// Manages raw input from GLFW and translates it into high-level camera and simulation states.
 pub struct InputHandler {
     window: Window,
     keys: HashMap<Key, bool>,
@@ -44,6 +47,7 @@ pub struct InputHandler {
     framebuffer_resized: Option<(i32, i32)>,
 }
 
+// Provides a default value for CameraLockTarget (None).
 impl Default for CameraLockTarget {
     fn default() -> Self {
         CameraLockTarget::None
@@ -51,6 +55,7 @@ impl Default for CameraLockTarget {
 }
 
 impl InputHandler {
+    // Creates a new InputHandler associated with the given window.
     pub fn new(window: Window) -> Self {
         Self {
             window,
@@ -63,6 +68,7 @@ impl InputHandler {
         }
     }
 
+    // Polls and processes all input events, returning updated camera and simulation states.
     pub fn process_input(&mut self) -> (CameraInputState, SimulationInputState) {
         // Poll events and update internal state
         self.poll_events();
@@ -76,6 +82,7 @@ impl InputHandler {
         (camera_state, simulation_state)
     }
     
+    // Polls GLFW events and updates internal input state (keys, mouse, cursor, resize).
     fn poll_events(&mut self) {
         self.window.poll_events();
         self.last_cursor_position = self.cursor_position;
@@ -111,18 +118,22 @@ impl InputHandler {
         }
     }
     
+    // Returns true if the given key was pressed during the current frame (not held from before).
     fn key_pressed_this_frame(&self, key: Key) -> bool {
         *self.keys.get(&key).unwrap_or(&false) && !self.last_frame_keys.get(&key).unwrap_or(&false)
     }
     
+    // Returns true if the given key is currently held down.
     fn is_key_down(&self, key: Key) -> bool {
         *self.keys.get(&key).unwrap_or(&false)
     }
     
+    // Returns true if the given mouse button is currently held down.
     fn is_mouse_button_down(&self, button: MouseButton) -> bool {
         *self.mouse_buttons.get(&button).unwrap_or(&false)
     }
     
+    // Computes and returns the change in cursor position since the last frame.
     fn get_mouse_delta(&self) -> Option<(f64, f64)> {
         if let (Some((x1, y1)), Some((x2, y2))) = (self.cursor_position, self.last_cursor_position) {
             Some((x1 - x2, y1 - y2))
@@ -131,6 +142,7 @@ impl InputHandler {
         }
     }
     
+    // Processes raw input into a structured camera input state.
     fn process_camera_input(&self) -> CameraInputState {
         let mut movement = Vec3::ZERO;
         let mut rotation = Vec2::ZERO;
@@ -170,6 +182,7 @@ impl InputHandler {
         }
     }
     
+    // Processes raw input into a structured simulation control state.
     fn process_simulation_input(&self) -> SimulationInputState {
         let mut time_scale_multiplier = 1.0;
         let mut spacecraft_rotation = Vec2::ZERO;
@@ -194,15 +207,16 @@ impl InputHandler {
             time_scale_multiplier,
             spacecraft_rotation,
             spacecraft_distance_delta,
-            should_close: self.window.should_close(),
             framebuffer_resized: self.framebuffer_resized
         }
     }
     
+    // Returns an immutable reference to the internal window.
     pub fn get_window(&self) -> &Window {
         &self.window
     }
     
+    // Returns a mutable reference to the internal window.
     pub fn get_window_mut(&mut self) -> &mut Window {
         &mut self.window
     }

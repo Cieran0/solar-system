@@ -1,11 +1,10 @@
+// Geometry shader layered rendering from learnopengl.com shadow tutorial (modified)
 #version 420 core
 layout(triangles) in;
 layout(triangle_strip, max_vertices = 18) out;
-
 uniform mat4 light_matrix[6]; // projection * view for each cube face
 in vec3 frag_pos[]; // from vertex shader
 out vec3 f_frag_pos;   // to fragment shader
-
 void main() {
     // Emit each triangle three times (once per cube face)
     for (int face = 0; face < 6; ++face) {

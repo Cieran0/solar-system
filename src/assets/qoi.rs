@@ -32,7 +32,7 @@ const QOI_MASK_2: u8 = 0xC0;
 
 const QOI_MAGIC: u32 = ('q' as u32) << 24 | ('o' as u32) << 16 | ('i' as u32) << 8 | ('f' as u32);
 
-
+// Computes a hash of an RGBA pixel for use in the QOI color index lookup table.
 fn colour_hash(px: Rgba) -> usize {
     px.r as usize * 3 +
     px.g as usize * 5 +
@@ -40,6 +40,7 @@ fn colour_hash(px: Rgba) -> usize {
     px.a as usize * 11
 }
 
+// Reads a big-endian 32-bit unsigned integer from a byte slice at the current position and advances the position.
 fn read_u32_be(bytes: &[u8], p: &mut usize) -> Result<u32, String> {
     if *p + 4 > bytes.len() {
         return Err("Unexpected EOF reading header".into());
@@ -52,6 +53,7 @@ fn read_u32_be(bytes: &[u8], p: &mut usize) -> Result<u32, String> {
     Ok(v)
 }
 
+// Parses the QOI file header and validates its contents, returning a QoiDesc structure.
 fn parse_header(bytes: &[u8], p: &mut usize) -> Result<QoiDesc, String> {
     if bytes.len() < QOI_HEADER_SIZE {
         return Err("Too small to be a QOI file".into());
@@ -85,6 +87,7 @@ fn parse_header(bytes: &[u8], p: &mut usize) -> Result<QoiDesc, String> {
     Ok(desc)
 }
 
+// Writes a single RGBA pixel into the output buffer, respecting the number of channels specified.
 fn write_pixel(out: &mut [u8], pos: usize, px: Rgba, channels: usize) {
     out[pos] = px.r;
     out[pos + 1] = px.g;
@@ -94,6 +97,7 @@ fn write_pixel(out: &mut [u8], pos: usize, px: Rgba, channels: usize) {
     }
 }
 
+// Processes a single QOI operation (opcode) to update the current pixel and color index array.
 fn process_op(
     b1: u8,
     bytes: &[u8],
@@ -145,7 +149,7 @@ fn process_op(
     Ok(())
 }
 
-
+// Decodes the QOI image data chunks into a raw pixel buffer using the provided header description.
 fn decode_chunks(bytes: &[u8], mut p: usize, desc: QoiDesc) -> Result<QoiImage, String> {
 
     let total_px = desc.width as usize * desc.height as usize * desc.channels as usize;
@@ -174,7 +178,7 @@ fn decode_chunks(bytes: &[u8], mut p: usize, desc: QoiDesc) -> Result<QoiImage, 
     Ok(QoiImage { desc, data: out })
 }
 
-
+// Decodes a complete QOI-encoded byte slice into a QoiImage structure.
 pub fn decode(bytes: &[u8]) -> Result<QoiImage, String> {
     let mut p = 0;
     let desc = parse_header(bytes, &mut p)?;

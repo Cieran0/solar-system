@@ -12,6 +12,7 @@ use crate::{
 
 const SPACECRAFT_SIZE: f32 = 0.00005;
 
+// Represents a planet, moon, or star with orbital and rotational properties.
 pub struct CelestialBody {
     pub radius: f32,
     pub orbit_radius: f32,
@@ -26,6 +27,7 @@ pub struct CelestialBody {
 }
 
 impl CelestialBody {
+    // Creates a new celestial body with the given physical and visual properties.
     pub fn new(
         radius: f32,
         orbit_radius: f32,
@@ -50,11 +52,13 @@ impl CelestialBody {
         }
     }
 
+    // Updates the orbital and rotational angles based on elapsed time.
     pub fn update(&mut self, dt: f32) {
         self.orbit_angle += self.orbit_speed * dt;
         self.rotation += self.rotation_speed * dt;
     }
 
+    // Computes the body’s position relative to its parent (e.g., planet around the Sun).
     pub fn get_relative_position(&self) -> Vec3 {
         let x = self.orbit_radius * self.orbit_angle.cos();
         let mut z = self.orbit_radius * self.orbit_angle.sin();
@@ -64,6 +68,7 @@ impl CelestialBody {
     }
 }
 
+// Manages all celestial bodies and the player-controlled spacecraft in the simulation.
 pub struct Scene {
     pub celestial_bodies: HashMap<String, CelestialBody>,
     pub spacecraft: Rc<dyn Shape>,
@@ -73,6 +78,7 @@ pub struct Scene {
 }
 
 impl Scene {
+    // Initializes the scene with celestial bodies and a spacecraft model.
     pub fn new(
         celestial_bodies: HashMap<String, CelestialBody>,
         spacecraft: Rc<dyn Shape>,
@@ -87,12 +93,14 @@ impl Scene {
         }
     }
 
+    // Updates all celestial bodies over time.
     pub fn update(&mut self, dt: f32) {
         for body in self.celestial_bodies.values_mut() {
             body.update(dt);
         }
     }
 
+    // Updates the spacecraft’s orientation and distance from Earth based on user input.
     pub fn update_spacecraft(&mut self, rotation_delta: glam::Vec2, distance_delta: f32) {
         let dt = 0.016; // fixed timestep for consistent control feel
         if rotation_delta.length_squared() > 0.0 {
@@ -104,6 +112,7 @@ impl Scene {
         self.spacecraft_distance = (self.spacecraft_distance + distance_delta * dt).max(0.05);
     }
 
+    // Generates a list of renderable objects with their model matrices and rendering parameters.
     pub fn get_renderables(&self) -> Vec<Renderable> {
         let mut renderables = Vec::new();
         let mut ts = TransformStack::new();
@@ -172,6 +181,7 @@ impl Scene {
         renderables
     }
 
+    // Returns the current world position of a named celestial body.
     pub fn get_body_position(&self, name: &str) -> Vec3 {
         match name {
             "Sun" => Vec3::ZERO,

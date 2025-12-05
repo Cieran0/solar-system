@@ -21,6 +21,7 @@ enum ParserState {
     ReadingFace,
 }
 
+// Parses a single vertex reference in an OBJ face line into position, texture, and normal indices.
 fn parse_face_vertex(field: &str) -> Result<(Option<u32>, Option<u32>, Option<u32>), Box<dyn Error>> {
     let parts: Vec<&str> = field.split('/').collect();
     let pos_idx = if parts[0].is_empty() { None } else { Some(parts[0].parse()?) };
@@ -29,6 +30,7 @@ fn parse_face_vertex(field: &str) -> Result<(Option<u32>, Option<u32>, Option<u3
     Ok((pos_idx, tex_idx, norm_idx))
 }
 
+// Loads and parses an OBJ file into structured geometry data including positions, texture coordinates, normals, and indices.
 fn load_obj_from_file(path: &str) -> Result<ObjData, Box<dyn Error>> {
     let data = read_to_string(path)?;
     let lines = data.lines();
@@ -172,6 +174,7 @@ pub struct ObjModel {
 }
 
 impl ObjModel {
+    // Creates a new ObjModel by loading and parsing an OBJ file and initializing OpenGL buffers.
     pub fn new(path: &str) -> Result<Self, Box<dyn Error>> {
         let data = load_obj_from_file(path)?;
 
@@ -253,6 +256,7 @@ impl ObjModel {
         }
     }
 
+    // Configures the vertex array object for instanced rendering using the provided instance transformation buffer.
     pub fn setup_instancing(&self, instance_vbo: GLuint) {
         unsafe {
             gl::BindVertexArray(self.vao);
@@ -279,6 +283,7 @@ impl ObjModel {
         }
     }
 
+    // Renders the model using instanced drawing with the specified number of instances.
     pub fn draw_instanced(&self, instance_count: GLsizei) {
         unsafe {
             gl::BindVertexArray(self.vao);
@@ -295,6 +300,7 @@ impl ObjModel {
 }
 
 impl Shape for ObjModel {
+    // Renders the model using standard indexed triangle rendering.
     fn draw(&self) {
         unsafe {
             gl::BindVertexArray(self.vao);
@@ -304,6 +310,7 @@ impl Shape for ObjModel {
 }
 
 impl Drop for ObjModel {
+    // Cleans up OpenGL resources associated with the model when it goes out of scope.
     fn drop(&mut self) {
         unsafe {
             gl::DeleteVertexArrays(1, &self.vao);

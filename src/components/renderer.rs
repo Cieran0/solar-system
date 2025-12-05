@@ -12,6 +12,7 @@ use crate::{
     simulation::solar_system::Renderable,
 };
 
+// Manages the complete rendering pipeline including shadows, skybox, celestial bodies, and asteroids.
 pub struct Renderer {
     pub shader_program: u32,
     pub instanced_shader_program: u32,
@@ -25,6 +26,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    // Initializes the renderer with shaders, sub-renderers, and viewport dimensions.
     pub fn new(
         shader_program: u32,
         instanced_shader_program: u32,
@@ -55,6 +57,7 @@ impl Renderer {
         }
     }
 
+    // Updates the projection matrix and viewport size when the window is resized.
     pub fn resize(&mut self, width: i32, height: i32) {
         self.win_width = width;
         self.win_height = height;
@@ -66,10 +69,12 @@ impl Renderer {
         );
     }
 
+    // Updates the positions and states of all asteroids in the field.
     pub fn update_asteroids(&mut self, dt: f32) {
         self.asteroid_field.update(dt);
     }
 
+    // Executes the full rendering sequence: shadow pass, skybox, celestial bodies, and asteroids.
     pub fn draw(&mut self, view: &Mat4, renderables: &[Renderable]) {
         unsafe {
             gl::ClearColor(0.0, 0.0, 0.0, 1.0);
@@ -128,6 +133,7 @@ impl Renderer {
         );
     }
 
+    // Cleans up GPU shader programs when the renderer is no longer needed.
     pub fn cleanup(&mut self) {
         unsafe {
             gl::DeleteProgram(self.shader_program);

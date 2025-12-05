@@ -4,10 +4,12 @@
 use glam::{Vec2, Vec3, Vec4};
 use gl::types::GLuint;
 
+// Defines a trait for drawable 3D shapes that can be rendered with OpenGL.
 pub trait Shape {
     fn draw(&self);
 }
 
+// Represents a sphere geometry with vertex buffer objects for position, color, normal, and texture coordinates.
 pub struct Sphere {
     vao: GLuint,
     vbo: [GLuint; 4], //  NOW 4: pos, colour, normal, texcoord
@@ -15,6 +17,7 @@ pub struct Sphere {
 }
 
 impl Sphere {
+    // Constructs a new sphere by generating its geometry and uploading it to GPU buffers.
     pub fn new(num_lats: usize, num_longs: usize, colour: Vec4) -> Self {
         let (positions, normals, colours, tex_coords) = Self::generate_sphere(num_lats, num_longs, colour);
         let vertex_count = positions.len() as i32;
@@ -51,6 +54,7 @@ impl Sphere {
         }
     }
 
+    // Generates vertex data for a sphere using latitude and longitude subdivisions.
     fn generate_sphere(num_lats: usize, num_longs: usize, colour: Vec4) -> (Vec<Vec3>, Vec<Vec3>, Vec<Vec4>, Vec<Vec2>) {
         let mut positions = Vec::new();
         let mut normals = Vec::new();
@@ -103,6 +107,7 @@ impl Sphere {
     }
 }
 
+// Implements the Shape trait to render the sphere using OpenGL triangle arrays.
 impl Shape for Sphere {
     fn draw(&self) {
         unsafe {
@@ -112,6 +117,7 @@ impl Shape for Sphere {
     }
 }
 
+// Cleans up OpenGL resources associated with the sphere when it is dropped.
 impl Drop for Sphere {
     fn drop(&mut self) {
         unsafe {

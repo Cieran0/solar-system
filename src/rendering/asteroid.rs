@@ -9,6 +9,7 @@ use rand::Rng;
 
 use crate::{assets::obj::ObjModel, uniforms::Uniforms};
 
+// Holds per-asteroid static orbital and scaling parameters used in GPU compute shaders.
 #[repr(C)]
 pub struct AsteroidStatic {
     pub orbit_radius: f32,
@@ -17,6 +18,7 @@ pub struct AsteroidStatic {
     pub y_axis_offset: f32,
 }
 
+// Holds per-asteroid dynamic state updated every frame by the compute shader (angles and speeds).
 #[repr(C)]
 pub struct AsteroidDynamic {
     pub orbit_angle: f32,
@@ -25,6 +27,7 @@ pub struct AsteroidDynamic {
     pub rotation_speed: f32,
 }
 
+// Manages a large field of instanced asteroids rendered and animated via compute shaders.
 pub struct AsteroidField {
     static_ssbo: GLuint,
     dynamic_ssbo: GLuint,
@@ -38,6 +41,7 @@ pub struct AsteroidField {
 }
 
 impl AsteroidField {
+    // Initializes the asteroid field by loading geometry, generating random asteroid data, and setting up GPU buffers.
     pub fn new(
         count: usize,
         model_path: &str,
@@ -130,18 +134,21 @@ impl AsteroidField {
         })
     }
 
+    // Dispatches a compute shader to update asteroid positions and rotations on the GPU.
     pub fn update(&self, dt: f32) {
         unsafe {
             gl::UseProgram(self.compute_program);
             let dt_loc = gl::GetUniformLocation(self.compute_program, b"dt\0".as_ptr() as *const _);
             gl::Uniform1f(dt_loc, dt);
 
+            // Compute shader dispatch pattern based on learnopengl.com compute tutorial (modified)
             let groups = ((self.instance_count as u32) + 255) / 256;
             gl::DispatchCompute(groups, 1, 1);
             gl::MemoryBarrier(gl::SHADER_STORAGE_BARRIER_BIT);
         }
     }
 
+    // Renders all asteroids using instanced drawing with lighting and shadow mapping.
     pub fn draw(
         &self,
         view: &Mat4,
@@ -171,6 +178,7 @@ impl AsteroidField {
     }
 }
 
+// Cleans up GPU buffers when the asteroid field is dropped.
 impl Drop for AsteroidField {
     fn drop(&mut self) {
         unsafe {
@@ -180,4 +188,3 @@ impl Drop for AsteroidField {
         }
     }
 }
-

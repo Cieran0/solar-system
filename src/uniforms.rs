@@ -4,6 +4,7 @@
 use std::ffi::CString;
 use glam::{Mat3, Mat4, Vec3, Vec4};
 
+// Manages OpenGL shader uniform locations and provides methods to update them efficiently.
 pub struct Uniforms {
     pub model: i32,
     pub view: i32,
@@ -19,6 +20,7 @@ pub struct Uniforms {
 }
 
 impl Uniforms {
+    // Creates a new Uniforms instance by querying uniform locations from the given shader program.
     pub fn new(shader_program: u32) -> Self {
         Self {
             model: Self::get_location(shader_program, "model"),
@@ -35,11 +37,13 @@ impl Uniforms {
         }
     }
 
+    // Helper to safely get a uniform location from a shader program.
     fn get_location(shader_program: u32, name: &str) -> i32 {
         let c_name = CString::new(name).expect("Invalid uniform name");
         unsafe { gl::GetUniformLocation(shader_program, c_name.as_ptr()) }
     }
 
+    // Sets the model matrix uniform.
     pub fn set_model_matrix(&self, matrix: &Mat4) {
         if self.model >= 0 {
             unsafe {
@@ -48,6 +52,7 @@ impl Uniforms {
         }
     }
 
+    // Sets the view matrix uniform.
     pub fn set_view_matrix(&self, matrix: &Mat4) {
         if self.view >= 0 {
             unsafe {
@@ -56,6 +61,7 @@ impl Uniforms {
         }
     }
 
+    // Sets the projection matrix uniform.
     pub fn set_projection_matrix(&self, matrix: &Mat4) {
         if self.projection >= 0 {
             unsafe {
@@ -64,6 +70,7 @@ impl Uniforms {
         }
     }
 
+    // Sets the normal matrix uniform derived from the model matrix.
     pub fn set_normal_matrix(&self, model_matrix: &Mat4) {
         if self.normal_matrix >= 0 {
             let normal_matrix = Mat3::from_mat4(*model_matrix).inverse().transpose();
@@ -73,6 +80,7 @@ impl Uniforms {
         }
     }
 
+    // Sets the light position uniform as a 4D vector.
     pub fn set_light_pos(&self, pos: Vec4) {
         if self.light_pos >= 0 {
             unsafe {
@@ -81,6 +89,7 @@ impl Uniforms {
         }
     }
 
+    // Sets the world-space light position uniform as a 3D vector.
     pub fn set_light_pos_world(&self, pos: Vec3) {
         if self.light_pos_world >= 0 {
             unsafe {
@@ -89,6 +98,7 @@ impl Uniforms {
         }
     }
 
+    // Sets the emissive rendering mode (0 = normal, 1 = emissive).
     pub fn set_emit_mode(&self, mode: u32) {
         if self.emit_mode >= 0 {
             unsafe {
@@ -97,6 +107,7 @@ impl Uniforms {
         }
     }
 
+    // Enables or disables texture sampling in the shader.
     pub fn set_use_texture(&self, use_tex: bool) {
         if self.use_texture >= 0 {
             unsafe {
@@ -105,6 +116,7 @@ impl Uniforms {
         }
     }
 
+    // Sets the texture unit for the base diffuse texture.
     pub fn set_base_texture(&self, texture_unit: i32) {
         if self.base_texture >= 0 {
             unsafe {
@@ -113,6 +125,7 @@ impl Uniforms {
         }
     }
 
+    // Sets the texture unit for the shadow cubemap.
     pub fn set_shadow_map(&self, texture_unit: i32) {
         if self.shadow_map >= 0 {
             unsafe {
@@ -121,6 +134,7 @@ impl Uniforms {
         }
     }
 
+    // Sets the maximum distance used in shadow map depth normalization.
     pub fn set_shadow_far(&self, far: f32) {
         if self.shadow_far >= 0 {
             unsafe {

@@ -19,6 +19,7 @@ use crate::{
     }
 };
 
+// Holds the main simulation state including input, camera, scene, and renderer.
 pub struct SolarSystem {
     input_handler: InputHandler,
     camera: Camera,
@@ -27,6 +28,7 @@ pub struct SolarSystem {
     sim_time_scale: f32,
 }
 
+// Describes an object to be rendered with geometry, transform, and material settings.
 pub struct Renderable {
     pub geometry: Rc<dyn Shape>,
     pub model_matrix: Mat4,
@@ -36,6 +38,7 @@ pub struct Renderable {
 }
 
 impl SolarSystem {
+    // Initializes the solar system simulation with models, textures, shaders, and renderers.
     pub fn new(
         window: Window,
         images: HashMap<String, QoiImage>,
@@ -141,6 +144,7 @@ impl SolarSystem {
         })
     }
 
+    // Processes user input and updates simulation controls.
     pub fn handle_events(&mut self) {
         let (camera_input, sim_input) = self.input_handler.process_input();
 
@@ -161,12 +165,9 @@ impl SolarSystem {
             sim_input.spacecraft_distance_delta,
         );
 
-        // Close window if requested
-        if sim_input.should_close {
-            self.input_handler.get_window_mut().set_should_close(true);
-        }
     }
 
+    // Updates all simulation objects based on elapsed time.
     pub fn update(&mut self, delta_time: f32) {
         let dt = delta_time * self.sim_time_scale;
 
@@ -193,25 +194,26 @@ impl SolarSystem {
         }
     }
 
+    // Renders the current frame and swaps buffers.
     pub fn draw(&mut self) {
         let view = self.camera.view_matrix();
         let renderables = self.scene.get_renderables();
         self.renderer.draw(&view, &renderables);
+        self.input_handler.get_window_mut().swap_buffers();
     }
 
+    // Returns whether the application should close.
     pub fn should_close(&self) -> bool {
         self.input_handler.get_window().should_close()
     }
 
-    pub fn swap_buffers(&mut self) {
-        self.input_handler.get_window_mut().swap_buffers();
-    }
-
+    // Cleans up GPU resources before shutdown.
     pub fn cleanup(&mut self) {
         self.renderer.cleanup();
     }
 }
 
+// Loads a texture from a pre-decoded QOI image.
 fn load_texture(name: &str, images: &HashMap<String, QoiImage>) -> Result<u32, Box<dyn std::error::Error>> {
     let image = images.get(name).expect(&format!("{} texture missing", name));
     texture::create_texture_from_image(image)

@@ -5,6 +5,7 @@ use std::error::Error;
 
 use crate::qoi::{QoiImage};
 
+// Creates a 2D OpenGL texture from a QOI image and returns its texture ID.
 pub fn create_texture_from_image(img: &QoiImage) -> Result<u32, Box<dyn Error>> {
     let mut texture_id = 0;
     unsafe {
@@ -28,6 +29,7 @@ pub fn create_texture_from_image(img: &QoiImage) -> Result<u32, Box<dyn Error>> 
     Ok(texture_id)
 }
 
+// Creates an OpenGL cubemap texture from six QOI images (one for each face) and returns its texture ID.
 pub fn create_cubemap_from_images(images: [&QoiImage; 6]) -> Result<u32, Box<dyn Error>> {
     let mut cubemap_id = 0;
     unsafe {

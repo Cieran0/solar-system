@@ -26,6 +26,7 @@ struct Args {
     asteroid_count: Option<usize>,
 }
 
+/// Prints the set of controls available to the user.
 fn print_controls() {
     println!("=== Controls ===");
     println!("Camera movement: W/A/S/D + Space (up) / LeftShift (down)");
@@ -37,6 +38,7 @@ fn print_controls() {
     println!("================");
 }
 
+/// Loads all .qoi images from the given root directory into a HashMap.
 fn load_images(root: &str) -> Result<HashMap<String, QoiImage>, Box<dyn Error>> {
     use walkdir::WalkDir;
     let paths: Vec<String> = WalkDir::new(root)
@@ -47,11 +49,11 @@ fn load_images(root: &str) -> Result<HashMap<String, QoiImage>, Box<dyn Error>> 
         .filter(|p| p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("qoi")))
         .filter_map(|p| p.to_str().map(|s| s.to_owned()))
         .collect();
-    
+
     if paths.is_empty() {
         return Ok(HashMap::new());
     }
-    
+
     let mut buffers = Vec::with_capacity(paths.len());
     for path in &paths {
         let mut file = std::fs::File::open(path)?;
@@ -59,7 +61,7 @@ fn load_images(root: &str) -> Result<HashMap<String, QoiImage>, Box<dyn Error>> 
         file.read_to_end(&mut buffer)?;
         buffers.push((path.clone(), buffer));
     }
-    
+
     let (tx, rx) = std::sync::mpsc::channel();
     for (path, buf) in buffers {
         let tx = tx.clone();
@@ -70,7 +72,7 @@ fn load_images(root: &str) -> Result<HashMap<String, QoiImage>, Box<dyn Error>> 
             }
         });
     }
-    
+
     drop(tx);
     let mut images = HashMap::with_capacity(paths.len());
     for _ in 0..paths.len() {
@@ -81,7 +83,7 @@ fn load_images(root: &str) -> Result<HashMap<String, QoiImage>, Box<dyn Error>> 
             Err(e) => return Err(e.into()),
         }
     }
-    
+
     Ok(images)
 }
 
@@ -89,42 +91,43 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     const DEFAULT_ASTEROID_COUNT: usize = 10_000;
     let asteroid_count = args.asteroid_count.unwrap_or(DEFAULT_ASTEROID_COUNT);
-    
+
     println!("Running with {} asteroids, set with -a [asteroid count]", asteroid_count);
     print_controls();
-    
+
     print!("Loading images...");
     io::stdout().flush()?;
     let images = load_images("textures")?;
     println!("Done!");
-    
+
     let width = 1280u32;
     let height = 720u32;
     let window = Window::new(width, height, "Solar System")?;
-    
+
     let mut solar_system = SolarSystem::new(window, images, asteroid_count)?;
-    
+
     let mut last_time = std::time::Instant::now();
-    
+
     while !solar_system.should_close() {
         let now = std::time::Instant::now();
         let delta = (now - last_time).as_secs_f32();
         last_time = now;
-                
+
         solar_system.handle_events();
         solar_system.update(delta);
         solar_system.draw();
-        solar_system.swap_buffers();
     }
-    
+
     solar_system.cleanup();
     Ok(())
 }
 
+/// Joins directory and file names into a valid OS path string.
 pub fn os_str(dir: &str, file: &str) -> String {
     Path::new(dir).join(file).to_str().unwrap().to_string()
 }
 
+/// Joins directory, subdirectory, and file names into a valid OS path string.
 pub fn os_str_sub(dir: &str, sub: &str, file: &str) -> String {
     Path::new(dir).join(sub).join(file).to_str().unwrap().to_string()
 }
