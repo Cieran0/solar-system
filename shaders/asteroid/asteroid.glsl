@@ -56,7 +56,7 @@ void main() {
     pos.x = x;
     pos.z = z;
 
-    // Build model matrix directly
+    // Build model matrix
     float c = cos(d.rotation);
     float s_rot = sin(d.rotation);
     mat4 m = mat4(1.0);

@@ -32,7 +32,7 @@ const QOI_MASK_2: u8 = 0xC0;
 
 const QOI_MAGIC: u32 = ('q' as u32) << 24 | ('o' as u32) << 16 | ('i' as u32) << 8 | ('f' as u32);
 
-// Computes a hash of an RGBA pixel for use in the QOI color index lookup table.
+// Creates unique index for color lookup table
 fn colour_hash(px: Rgba) -> usize {
     px.r as usize * 3 +
     px.g as usize * 5 +
@@ -41,7 +41,7 @@ fn colour_hash(px: Rgba) -> usize {
 }
 
 // Reads a big-endian 32-bit unsigned integer from a byte slice at the current position and advances the position.
-fn read_u32_be(bytes: &[u8], p: &mut usize) -> Result<u32, String> {
+fn read_u32_be(bytes: &[u8], p: &mut usize) -> Result<u32, Box<dyn std::error::Error>> {
     if *p + 4 > bytes.len() {
         return Err("Unexpected EOF reading header".into());
     }
@@ -54,7 +54,7 @@ fn read_u32_be(bytes: &[u8], p: &mut usize) -> Result<u32, String> {
 }
 
 // Parses the QOI file header and validates its contents, returning a QoiDesc structure.
-fn parse_header(bytes: &[u8], p: &mut usize) -> Result<QoiDesc, String> {
+fn parse_header(bytes: &[u8], p: &mut usize) -> Result<QoiDesc, Box<dyn std::error::Error>> {
     if bytes.len() < QOI_HEADER_SIZE {
         return Err("Too small to be a QOI file".into());
     }
@@ -105,7 +105,7 @@ fn process_op(
     px: &mut Rgba,
     index: &mut [Rgba; 64],
     run: &mut usize,
-) -> Result<(), String> {
+) -> Result<(), Box<dyn std::error::Error>> {
     match b1 {
         QOI_OP_RGB => {
             px.r = *bytes.get(*p).ok_or("EOF in RGB")?;
@@ -120,14 +120,17 @@ fn process_op(
             px.a = *bytes.get(*p + 3).ok_or("EOF in RGBA")?;
             *p += 4;
         }
+        // Index into previously seen colors
         _ if (b1 & QOI_MASK_2) == QOI_OP_INDEX => {
             *px = index[b1 as usize];
         }
+        // Small difference from previous pixel
         _ if (b1 & QOI_MASK_2) == QOI_OP_DIFF => {
             px.r = px.r.wrapping_add(((b1 >> 4) & 0x03).wrapping_sub(2));
             px.g = px.g.wrapping_add(((b1 >> 2) & 0x03).wrapping_sub(2));
             px.b = px.b.wrapping_add((b1 & 0x03).wrapping_sub(2));
         }
+        // Larger brightness changes with chroma
         _ if (b1 & QOI_MASK_2) == QOI_OP_LUMA => {
             let b2 = *bytes.get(*p).ok_or("EOF in LUMA")?;
             *p += 1;
@@ -138,19 +141,21 @@ fn process_op(
             px.g = px.g.wrapping_add(vg as u8);
             px.b = px.b.wrapping_add((vg - 8 + (b2 & 0x0f) as i8) as u8);
         }
+        // Run-length encoding for repeated pixels
         _ if (b1 & QOI_MASK_2) == QOI_OP_RUN => {
             *run = (b1 & 0x3f) as usize;
         }
         _ => {}
     };
 
+    // Update color hash table with current pixel
     index[colour_hash(*px) & 63] = *px;
 
     Ok(())
 }
 
 // Decodes the QOI image data chunks into a raw pixel buffer using the provided header description.
-fn decode_chunks(bytes: &[u8], mut p: usize, desc: QoiDesc) -> Result<QoiImage, String> {
+fn decode_chunks(bytes: &[u8], mut p: usize, desc: QoiDesc) -> Result<QoiImage, Box<dyn std::error::Error>> {
 
     let total_px = desc.width as usize * desc.height as usize * desc.channels as usize;
     let mut out = vec![0u8; total_px];
@@ -162,6 +167,7 @@ fn decode_chunks(bytes: &[u8], mut p: usize, desc: QoiDesc) -> Result<QoiImage, 
     let mut run = 0usize;
     let mut pos = 0;
 
+    // Main decoding loop - processes all pixels
     while pos < total_px {
         if run > 0 {
             run -= 1;
@@ -179,7 +185,7 @@ fn decode_chunks(bytes: &[u8], mut p: usize, desc: QoiDesc) -> Result<QoiImage, 
 }
 
 // Decodes a complete QOI-encoded byte slice into a QoiImage structure.
-pub fn decode(bytes: &[u8]) -> Result<QoiImage, String> {
+pub fn decode(bytes: &[u8]) -> Result<QoiImage, Box<dyn std::error::Error>> {
     let mut p = 0;
     let desc = parse_header(bytes, &mut p)?;
 

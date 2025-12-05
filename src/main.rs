@@ -100,8 +100,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let images = load_images("textures")?;
     println!("Done!");
 
-    let width = 1280u32;
-    let height = 720u32;
+    let width = 1920u32;
+    let height = 1080u32;
     let window = Window::new(width, height, "Solar System")?;
 
     let mut solar_system = SolarSystem::new(window, images, asteroid_count)?;

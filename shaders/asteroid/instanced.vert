@@ -11,28 +11,20 @@ uniform mat3 normal_matrix;
 uniform vec3 light_pos_world;
 
 out vec3 f_frag_pos;
-out vec3 Normal;
-out vec2 TexCoord;
-out vec4 FragColor;
-out float Visibility;
+out vec3 f_normal;
+out vec2 tex_coord;
+out vec4 f_frag_colour;
 
-const float PI = 3.14159265359;
 uniform float shadow_far;
-
-float calculateVisibility(float distance, float far) {
-    float normalizedDistance = distance / far;
-    return 1.0 - (normalizedDistance * normalizedDistance);
-}
 
 void main() {
     vec4 worldPos = instanceModel * vec4(aPos, 1.0);
     f_frag_pos = worldPos.xyz;
-    Normal = normalize(normal_matrix * aNormal);
-    TexCoord = aTexCoord;
-    FragColor = aColor;
+    f_normal = normalize(normal_matrix * aNormal);
+    tex_coord = aTexCoord;
+    f_frag_colour = aColor;
     
     float distance = length(worldPos.xyz - light_pos_world);
-    Visibility = clamp(calculateVisibility(distance, shadow_far), 0.0, 1.0);
     
     gl_Position = projection * view * worldPos;
 }
